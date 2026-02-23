@@ -23,4 +23,4 @@ def normalize_bgc_class_string(label: str) -> str | None:
     str | None
         Mapped value if found, otherwise None.
     """
-    return CLASS_MAP.get(label)
+    return CLASS_MAP.get(label,label)
