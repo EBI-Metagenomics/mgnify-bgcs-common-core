@@ -1,0 +1,91 @@
+# ESM-C protein embedding worker — example configuration.
+#
+# Every value can be overridden via:
+#   CLI flag   (e.g. --input-file /path/to/proteins.faa)
+#   Env var    (e.g. ESMJOB_IO__INPUT_FILE=/path/to/proteins.faa)
+#
+# ${VAR} placeholders are expanded from the shell environment at load time.
+
+job_name: "${ESMC_JOB_NAME}"
+
+io:
+  # Path to input FASTA (.faa / .faa.gz) or GenBank (.gbk / .gbk.gz) file.
+  input_file: "${ESMC_INPUT_FILE}"
+
+  # "fasta" or "genbank"
+  input_format: "fasta"
+
+  # Directory where <output_prefix>.embeddings.parquet will be written.
+  output_dir: "${ESMC_OUTPUT_DIR}"
+
+  output_prefix: "proteins"
+
+esmc:
+  # ESM-C checkpoint to load (e.g. esmc_300m, esmc_600m).
+  model_name: "${ESMC_MODEL_NAME}"
+
+  # null → auto-detect (CUDA if available, else CPU).
+  # Set to "cpu" or "cuda" to force a specific device.
+  device: null
+
+  # Numpy dtype for stored hidden states: "float32" or "float16".
+  np_dtype: "float32"
+
+  # Max total tokens across all sequences in a single inference batch.
+  batch_token_budget: 6000
+
+  # Sequences longer than this are skipped with a warning.
+  max_single_sequence: 10000
+
+  # Parquet row-group size (controls memory vs. read performance trade-off).
+  parquet_row_group_size: 10000
+
+  # Retry a failing record as a single-item batch before giving up.
+  retry_failed_individually: true
+
+  # Continue past records that still fail after retry (false = fail fast).
+  skip_failed_records: true
+
+  # Validate input file format (BioPython peek) and amino-acid alphabet.
+  validate_sequence: true
+
+logging:
+  # DEBUG | INFO | WARNING | ERROR | CRITICAL
+  level: "INFO"
+
+  # Emit structured JSON log lines (recommended for production).
+  json: true
+
+# ---------------------------------------------------------------------------
+# BGC aggregation — used by esmc-embed-bgc only; ignored by esmc-embed.
+#
+# Defaults reflect the best configuration from the bgc-embedding-strategies
+# and bgc-positional-encoding experiments (MIBiG 4.0, esmc_600m).
+# ---------------------------------------------------------------------------
+bgc:
+  # Hidden layer index (int, 0-indexed) or "final" (last hidden layer).
+  layer: 29
+
+  # Positional encoding scale α.  0.0 disables PE entirely.
+  scale: 0.5
+
+  # Pooling strategy across proteins: "mean" or "max".
+  aggregation: "mean"
+
+  # L2-normalise each protein vector before pooling.
+  per_protein_norm: false
+
+  # L2-normalise the BGC vector after pooling.
+  post_norm: false
+
+  # If true, add α·PE before per-protein L2 norm; if false, after.
+  pe_before_norm: true
+
+  # Also write a per-protein embeddings parquet alongside the BGC parquet.
+  write_protein_parquet: true
+
+  # BGC accession written to the output row.  null → empty/null in the table.
+  accession: null
+
+  # Output filename prefix: <output_prefix>.embedding.parquet
+  output_prefix: "bgc"
