@@ -8,6 +8,10 @@ description = "Shared core utilities for MGnify BGCs"
 dynamic = ["version"]
 requires-python = ">=3.12"
 dependencies = [
+  "biopython>=1.83",
+  "pydantic>=2",
+  "pydantic-settings>=2",
+  "PyYAML>=6",
 ]
 
 [project.optional-dependencies]
@@ -28,8 +32,10 @@ dev = [
 ]
 
 [project.scripts]
-esmc-embed     = "common_core.esmc_embedder:main"
-esmc-embed-bgc = "common_core.esmc_embedder:main_bgc"
+esmc-embed           = "common_core.esmc_embedder:main"
+esmc-embed-bgc       = "common_core.esmc_embedder:main_bgc"
+contig-length-filter = "common_core.contig_length_filter:main"
+bgc-region-extractor = "common_core.bgc_region_extractor:main"
 
 
 [tool.setuptools]
