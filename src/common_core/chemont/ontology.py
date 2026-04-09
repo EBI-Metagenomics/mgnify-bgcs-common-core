@@ -57,6 +57,12 @@ class ChemOntOntology:
         }
         self.compiled_smarts: dict[str, object] = _compile_smarts(self.terms)
 
+        # Build children mapping (reverse of parent_ids) for descendant lookups.
+        self._children: dict[str, list[str]] = {}
+        for tid, term in self.terms.items():
+            for pid in term.parent_ids:
+                self._children.setdefault(pid, []).append(tid)
+
         n_smarts = len(self.compiled_smarts)
         log.info(
             "loaded %d ChemOnt terms (%d with compiled SMARTS) from %s",
@@ -107,6 +113,48 @@ class ChemOntOntology:
                     queue.append(pid)
                     visited.add(pid)
 
+        return result
+
+    def get_descendants(self, chemont_id: str) -> list[ChemOntTerm]:
+        """Return all descendants of a term (BFS downward through children)."""
+        result: list[ChemOntTerm] = []
+        visited: set[str] = set()
+        queue = deque(self._children.get(chemont_id, []))
+        visited.update(queue)
+
+        while queue:
+            tid = queue.popleft()
+            t = self.terms.get(tid)
+            if t is None:
+                continue
+            result.append(t)
+            for child_id in self._children.get(tid, []):
+                if child_id not in visited:
+                    queue.append(child_id)
+                    visited.add(child_id)
+
+        return result
+
+    def get_ancestor_ids(self, chemont_id: str) -> set[str]:
+        """Return the set of all ancestor IDs (including the term itself)."""
+        result: set[str] = {chemont_id}
+        queue = deque[str]()
+        term = self.terms.get(chemont_id)
+        if term is None:
+            return result
+        for pid in term.parent_ids:
+            if pid not in result:
+                queue.append(pid)
+                result.add(pid)
+        while queue:
+            tid = queue.popleft()
+            t = self.terms.get(tid)
+            if t is None:
+                continue
+            for pid in t.parent_ids:
+                if pid not in result:
+                    queue.append(pid)
+                    result.add(pid)
         return result
 
     def get_lineage_smarts(
