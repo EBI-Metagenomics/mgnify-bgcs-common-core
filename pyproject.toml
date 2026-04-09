@@ -26,6 +26,12 @@ esmc = [
   "pydantic-settings>=2",
   "PyYAML>=6",
 ]
+chemont = [
+  "rdkit",
+  "pydantic>=2",
+  "pydantic-settings>=2",
+  "PyYAML>=6",
+]
 dev = [
   "pytest>=8,<9",
   "ruff>=0.6,<1",
@@ -36,6 +42,7 @@ esmc-embed           = "common_core.esmc_embedder:main"
 esmc-embed-bgc       = "common_core.esmc_embedder:main_bgc"
 contig-length-filter = "common_core.contig_length_filter:main"
 bgc-region-extractor = "common_core.bgc_region_extractor:main"
+chemont-classify     = "common_core.chemont_classifier:main"
 
 
 [tool.setuptools]

@@ -1,0 +1,17 @@
+job_name: chemont-classify
+
+chemont:
+  obo_path: ${CHEMONT_OBO_PATH:/data/chemont/ChemOnt_2_1.obo}
+
+io:
+  # Single-SMILES mode (uncomment to use):
+  # smiles: "CCO"
+
+  # Batch mode (uncomment to use):
+  # input: /data/input/compounds.tsv
+  # output: /data/output/chemont_results.tsv
+  smiles_column: smiles
+  id_column: id
+
+logging:
+  level: INFO
