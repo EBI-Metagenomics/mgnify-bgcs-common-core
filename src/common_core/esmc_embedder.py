@@ -11,6 +11,11 @@ Library usage:
 
     bgc_vec = aggregate_bgc_sequences(["MKTII...", "ACDEF..."], layer=29, scale=0.5)
     # returns np.ndarray of shape (hidden_dim,)
+
+    # Two-step alternative (avoids re-inference for overlapping BGCs):
+    from common_core.esmc_embedder import embed_sequences, aggregate_bgc_embeddings
+    vecs = embed_sequences(all_unique_sequences)
+    bgc_vec = aggregate_bgc_embeddings(vecs_for_this_bgc, layer=29, scale=0.5)
 """
 from __future__ import annotations
 
@@ -22,6 +27,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterator, List, Literal, Optional, Sequence, Tuple, Union
+
+import threading
 
 import numpy as np
 import pyarrow as pa
@@ -46,6 +53,13 @@ DeviceType = Literal["cpu", "cuda"]
 
 # LogitsConfig used for every inference call — embeddings disabled, hidden states on
 _LOGITS_CFG = LogitsConfig(sequence=True, return_embeddings=False, return_hidden_states=True)
+
+# Serialise all model.encode / model.logits calls: batch_executor dispatches
+# user_func concurrently from a thread pool, but the local ESM-C model is not
+# thread-safe on CPU (concurrent calls produce tensor-size mismatches in the
+# attention kernels).  A single lock ensures one inference at a time while
+# still allowing the executor to manage retries / progress reporting.
+_INFERENCE_LOCK: threading.Lock = threading.Lock()
 
 
 # -------------------------
@@ -264,9 +278,10 @@ def _embed_sequence_user_func(
     sequence: str,
     logits_cfg: LogitsConfig,
 ):
-    protein = ESMProtein(sequence=sequence)
-    protein_tensor = client.encode(protein)
-    return client.logits(protein_tensor, logits_cfg)
+    with _INFERENCE_LOCK:
+        protein = ESMProtein(sequence=sequence)
+        protein_tensor = client.encode(protein)
+        return client.logits(protein_tensor, logits_cfg)
 
 
 def _run_batch(model: ESMC, protein_ids: Sequence[str], sequences: Sequence[str]):
@@ -360,7 +375,7 @@ class _ParquetWriter:
                     type=pa.binary(),
                 ),
             ],
-            schema=self._writer.schema_arrow,
+            schema=self._writer.schema,
         )
         self._writer.write_table(table)
 
@@ -553,7 +568,7 @@ class _BGCParquetWriter:
                 pa.array([strategy_id], type=pa.string()),
                 pa.array([n_proteins], type=pa.int32()),
             ],
-            schema=self._writer.schema_arrow,
+            schema=self._writer.schema,
         )
         self._writer.write_table(table)
 
@@ -965,6 +980,49 @@ def aggregate_bgc_sequences(
         return None
     return _aggregate_bgc_vector(
         hidden_means,  # type: ignore[arg-type]
+        layer=layer,
+        scale=scale,
+        aggregation=aggregation,
+        per_protein_norm=per_protein_norm,
+        post_norm=post_norm,
+        pe_before_norm=pe_before_norm,
+    )
+
+
+def aggregate_bgc_embeddings(
+    embeddings: Sequence[np.ndarray],
+    *,
+    layer: Union[int, Literal["final"]] = 29,
+    scale: float = 0.5,
+    aggregation: Literal["mean", "max"] = "mean",
+    per_protein_norm: bool = False,
+    post_norm: bool = False,
+    pe_before_norm: bool = True,
+) -> Optional[np.ndarray]:
+    """Aggregate pre-computed per-protein ESM-C embeddings into a BGC-level vector.
+
+    Drop-in complement to ``aggregate_bgc_sequences`` for callers that have
+    already called ``embed_sequences`` and want to avoid redundant re-inference
+    (e.g. when multiple overlapping BGCs share CDS entries on the same contig).
+
+    Args:
+        embeddings: Ordered list of per-protein arrays, each shape
+            ``[n_layers, hidden_dim]``, in CDS order within the BGC.
+        layer: Hidden layer index (int) or ``"final"`` (last hidden layer).
+        scale: PE scale factor α.  0.0 disables positional encoding.
+        aggregation: ``"mean"`` or ``"max"`` pooling over proteins.
+        per_protein_norm: L2-normalise each protein vector before pooling.
+        post_norm: L2-normalise the BGC vector after pooling.
+        pe_before_norm: If True, add α·PE before per-protein L2 norm; else after.
+
+    Returns:
+        float32 ndarray of shape ``(hidden_dim,)``, or ``None`` if
+        ``embeddings`` is empty.
+    """
+    if not embeddings:
+        return None
+    return _aggregate_bgc_vector(
+        list(embeddings),
         layer=layer,
         scale=scale,
         aggregation=aggregation,

@@ -24,8 +24,8 @@ log = logging.getLogger(__name__)
 
 # Default GFF feature types per caller.
 CALLER_FEATURE_TYPES = {
-    "gecco": "biosynthetic_gene_cluster",
-    "sanntis": "biosynthetic_gene_cluster",
+    "gecco": "bgc",
+    "sanntis": "cluster",
     "antismash": "region",
 }
 

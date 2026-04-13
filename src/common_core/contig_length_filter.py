@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 from pathlib import Path
 from typing import Optional, Set
 
@@ -81,6 +82,9 @@ def filter_gbk(gbk_path: Path, out_path: Path, passing: Set[str]) -> int:
     return len(kept)
 
 
+_BRACKET_CONTIG_RE = re.compile(r"\[([^\]]+)\]")
+
+
 def _contig_id_from_protein_id(protein_id: str) -> str:
     """Derive contig ID from Pyrodigal-style protein ID.
 
@@ -93,13 +97,38 @@ def _contig_id_from_protein_id(protein_id: str) -> str:
     return protein_id
 
 
+def _contig_id_from_description(description: str) -> str | None:
+    """Extract contig ID from bracket notation in GBK-reversed FAA headers.
+
+    GBK-reversed FAA headers embed the source contig as the first bracketed
+    token, e.g.::
+
+        MGYG000296008_00351 [MGYG000296008_6] product=Elongation factor G
+
+    Returns the bracketed value, or ``None`` if no bracket is found.
+    """
+    m = _BRACKET_CONTIG_RE.search(description)
+    return m.group(1) if m else None
+
+
 def filter_faa(faa_path: Path, out_path: Path, passing: Set[str]) -> int:
-    """Keep proteins whose parent contig is in *passing*."""
-    kept = [
-        r
-        for r in SeqIO.parse(str(faa_path), "fasta")
-        if _contig_id_from_protein_id(r.id) in passing
-    ]
+    """Keep proteins whose parent contig is in *passing*.
+
+    Supports two protein-ID conventions:
+
+    * **Pyrodigal-style** ``{contig_id}_{gene_number}`` — contig ID is derived
+      by stripping the trailing ``_N`` numeric token from the sequence ID.
+    * **GBK-reversed** — the contig ID is embedded in the FASTA description as
+      the first bracketed token, e.g. ``[MGYG000296008_6]``.  This fallback is
+      used when the Pyrodigal-derived ID is not in the passing set.
+    """
+    kept = []
+    for r in SeqIO.parse(str(faa_path), "fasta"):
+        contig_id = _contig_id_from_protein_id(r.id)
+        if contig_id not in passing:
+            contig_id = _contig_id_from_description(r.description) or contig_id
+        if contig_id in passing:
+            kept.append(r)
     SeqIO.write(kept, str(out_path), "fasta")
     return len(kept)
 
