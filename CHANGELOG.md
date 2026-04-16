@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.3.0...mgnify-bgcs-common-core-v1.3.1) (2026-04-16)
+
+
+### Performance Improvements
+
+* **bgc_aggregator:** Change esm model from 600M to 300M params ([62294d9](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/62294d9f755e109296fb6223f38df19e332d9114))
+
 ## [1.3.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.2.0...mgnify-bgcs-common-core-v1.3.0) (2026-04-13)
 
 
