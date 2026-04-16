@@ -68,7 +68,7 @@ _INFERENCE_LOCK: threading.Lock = threading.Lock()
 
 
 class ESMCConfig(BaseModel):
-    model_name: str = "esmc_600m"
+    model_name: str = "esmc_300m"
     device: Optional[DeviceType] = None
     np_dtype: Literal["float32", "float16"] = "float32"
     batch_token_budget: int = 6000
@@ -94,7 +94,7 @@ class JobSettings(BaseSettings):
 
 
 class BGCAggregationConfig(BaseModel):
-    layer: Union[int, Literal["final"]] = 29
+    layer: Union[int, Literal["final"]] = 26
     scale: float = 0.5
     aggregation: Literal["mean", "max"] = "mean"
     per_protein_norm: bool = False
@@ -400,7 +400,7 @@ def _sinusoidal_pe(n_proteins: int, dim: int) -> np.ndarray:
     PE[i, 2k]   = sin(i / 10000^(2k/dim))
     PE[i, 2k+1] = cos(i / 10000^(2k/dim))
 
-    Assumes dim is even (true for esmc_600m=1152, esmc_300m=960).
+    Assumes dim is even (true for esmc_300m=960, esmc_600m=1152).
     """
     pe = np.zeros((n_proteins, dim), dtype=np.float64)
     positions = np.arange(n_proteins, dtype=np.float64)[:, np.newaxis]
@@ -871,7 +871,7 @@ def embed_and_write_bgc_parquet(cfg: BGCJobSettings) -> None:
 def embed_sequences(
     sequences: Sequence[str],
     *,
-    model_name: str = "esmc_600m",
+    model_name: str = "esmc_300m",
     device: Optional[str] = None,
     np_dtype: str = "float32",
     batch_token_budget: int = 6000,
@@ -885,7 +885,7 @@ def embed_sequences(
 
     Args:
         sequences: Protein sequences (plain amino-acid strings).
-        model_name: ESM-C checkpoint name (default ``esmc_600m``).
+        model_name: ESM-C checkpoint name (default ``esmc_300m``).
         device: ``"cpu"`` or ``"cuda"``.  Auto-detected when ``None``.
         np_dtype: ``"float32"`` or ``"float16"``.
         batch_token_budget: Max total tokens per inference batch.
@@ -928,8 +928,8 @@ def embed_sequences(
 def aggregate_bgc_sequences(
     sequences: Sequence[str],
     *,
-    model_name: str = "esmc_600m",
-    layer: Union[int, Literal["final"]] = 29,
+    model_name: str = "esmc_300m",
+    layer: Union[int, Literal["final"]] = 26,
     scale: float = 0.5,
     aggregation: Literal["mean", "max"] = "mean",
     per_protein_norm: bool = False,
@@ -953,7 +953,7 @@ def aggregate_bgc_sequences(
         per_protein_norm: L2-normalise each protein vector before pooling.
         post_norm: L2-normalise the BGC vector after pooling.
         pe_before_norm: If True, add α·PE before per-protein L2 norm; else after.
-        model_name: ESM-C checkpoint (default ``esmc_600m``).
+        model_name: ESM-C checkpoint (default ``esmc_300m``).
         device: ``"cpu"`` or ``"cuda"``.  Auto-detected when ``None``.
         np_dtype: ``"float32"`` or ``"float16"``.
         batch_token_budget: Max total tokens per inference batch.
@@ -992,7 +992,7 @@ def aggregate_bgc_sequences(
 def aggregate_bgc_embeddings(
     embeddings: Sequence[np.ndarray],
     *,
-    layer: Union[int, Literal["final"]] = 29,
+    layer: Union[int, Literal["final"]] = 26,
     scale: float = 0.5,
     aggregation: Literal["mean", "max"] = "mean",
     per_protein_norm: bool = False,

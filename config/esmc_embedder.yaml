@@ -60,11 +60,11 @@ logging:
 # BGC aggregation — used by esmc-embed-bgc only; ignored by esmc-embed.
 #
 # Defaults reflect the best configuration from the bgc-embedding-strategies
-# and bgc-positional-encoding experiments (MIBiG 4.0, esmc_600m).
+# and bgc-positional-encoding experiments (MIBiG 4.0, esmc_300m).
 # ---------------------------------------------------------------------------
 bgc:
   # Hidden layer index (int, 0-indexed) or "final" (last hidden layer).
-  layer: 29
+  layer: 26
 
   # Positional encoding scale α.  0.0 disables PE entirely.
   scale: 0.5

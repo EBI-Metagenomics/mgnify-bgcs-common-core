@@ -9,6 +9,7 @@ that pass the length threshold.
 from __future__ import annotations
 
 import argparse
+import gzip
 import logging
 import re
 from pathlib import Path
@@ -19,10 +20,18 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 from common_core.config_loader import LoaderOptions, load_settings
+from common_core.io import open_text
 from common_core.logging_setup import LoggingConfig, setup_logging
 from common_core.versioning import dist_version
 
 log = logging.getLogger(__name__)
+
+
+def _open_seq(path: Path):
+    """Open a file for BioPython SeqIO, transparently decompressing .gz."""
+    if str(path).endswith(".gz"):
+        return gzip.open(path, "rt")
+    return open(path, "r")
 
 
 # ---------------------------------------------------------------------------
@@ -53,31 +62,35 @@ class FilterSettings(BaseSettings):
 def _passing_contig_ids_from_fna(fna_path: Path, min_length: int) -> Set[str]:
     """Return set of contig IDs whose sequences are >= *min_length*."""
     passing: Set[str] = set()
-    for record in SeqIO.parse(str(fna_path), "fasta"):
-        if len(record.seq) >= min_length:
-            passing.add(record.id)
+    with _open_seq(fna_path) as fh:
+        for record in SeqIO.parse(fh, "fasta"):
+            if len(record.seq) >= min_length:
+                passing.add(record.id)
     return passing
 
 
 def _passing_contig_ids_from_gbk(gbk_path: Path, min_length: int) -> Set[str]:
     """Return set of contig IDs from GenBank records >= *min_length*."""
     passing: Set[str] = set()
-    for record in SeqIO.parse(str(gbk_path), "genbank"):
-        if len(record.seq) >= min_length:
-            passing.add(record.id)
+    with _open_seq(gbk_path) as fh:
+        for record in SeqIO.parse(fh, "genbank"):
+            if len(record.seq) >= min_length:
+                passing.add(record.id)
     return passing
 
 
 def filter_fna(fna_path: Path, out_path: Path, passing: Set[str]) -> int:
     """Write only passing contigs. Return count of written records."""
-    kept = [r for r in SeqIO.parse(str(fna_path), "fasta") if r.id in passing]
+    with _open_seq(fna_path) as fh:
+        kept = [r for r in SeqIO.parse(fh, "fasta") if r.id in passing]
     SeqIO.write(kept, str(out_path), "fasta")
     return len(kept)
 
 
 def filter_gbk(gbk_path: Path, out_path: Path, passing: Set[str]) -> int:
     """Write only GenBank records whose id is in *passing*."""
-    kept = [r for r in SeqIO.parse(str(gbk_path), "genbank") if r.id in passing]
+    with _open_seq(gbk_path) as fh:
+        kept = [r for r in SeqIO.parse(fh, "genbank") if r.id in passing]
     SeqIO.write(kept, str(out_path), "genbank")
     return len(kept)
 
@@ -123,12 +136,13 @@ def filter_faa(faa_path: Path, out_path: Path, passing: Set[str]) -> int:
       used when the Pyrodigal-derived ID is not in the passing set.
     """
     kept = []
-    for r in SeqIO.parse(str(faa_path), "fasta"):
-        contig_id = _contig_id_from_protein_id(r.id)
-        if contig_id not in passing:
-            contig_id = _contig_id_from_description(r.description) or contig_id
-        if contig_id in passing:
-            kept.append(r)
+    with _open_seq(faa_path) as fh:
+        for r in SeqIO.parse(fh, "fasta"):
+            contig_id = _contig_id_from_protein_id(r.id)
+            if contig_id not in passing:
+                contig_id = _contig_id_from_description(r.description) or contig_id
+            if contig_id in passing:
+                kept.append(r)
     SeqIO.write(kept, str(out_path), "fasta")
     return len(kept)
 
@@ -136,7 +150,7 @@ def filter_faa(faa_path: Path, out_path: Path, passing: Set[str]) -> int:
 def filter_gff(gff_path: Path, out_path: Path, passing: Set[str]) -> int:
     """Keep GFF feature lines whose seqid (col 1) is in *passing*."""
     kept = 0
-    with open(gff_path, "r") as fin, open(out_path, "w") as fout:
+    with open_text(gff_path) as fin, open(out_path, "w") as fout:
         for line in fin:
             if line.startswith("#"):
                 fout.write(line)
