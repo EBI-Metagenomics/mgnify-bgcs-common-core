@@ -115,6 +115,14 @@ class ChemOntOntology:
 
         return result
 
+    def get_children(self, chemont_id: str) -> list[ChemOntTerm]:
+        """Return the direct children of *chemont_id*."""
+        return [
+            self.terms[cid]
+            for cid in self._children.get(chemont_id, [])
+            if cid in self.terms
+        ]
+
     def get_descendants(self, chemont_id: str) -> list[ChemOntTerm]:
         """Return all descendants of a term (BFS downward through children)."""
         result: list[ChemOntTerm] = []
