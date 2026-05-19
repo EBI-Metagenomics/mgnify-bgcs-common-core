@@ -32,6 +32,24 @@ chemont = [
   "pydantic-settings>=2",
   "PyYAML>=6",
 ]
+hpc-cpu = [
+  "numpy>=2.0",
+  "scipy>=1.13",
+  "python-igraph>=0.11",
+  "leidenalg>=0.10",
+  "umap-learn>=0.5",
+  "numba>=0.60",
+  "pyarrow>=15",
+  "joblib>=1.4",
+]
+hpc-gpu = [
+  # Additive on top of hpc-cpu. Pin to the RAPIDS release matching the
+  # cluster's CUDA toolkit; conda/mamba is the safer install path on most
+  # HPC sites — see the README runbook.
+  "cupy-cuda12x>=13",
+  "cuml-cu12>=24.10",
+  "cugraph-cu12>=24.10",
+]
 dev = [
   "pytest>=8,<9",
   "ruff>=0.6,<1",
@@ -43,6 +61,7 @@ esmc-embed-bgc       = "common_core.esmc_embedder:main_bgc"
 contig-length-filter = "common_core.contig_length_filter:main"
 bgc-region-extractor = "common_core.bgc_region_extractor:main"
 chemont-classify     = "common_core.chemont_classifier:main"
+bgc-cluster          = "common_core.clustering.cli:main"
 
 
 [tool.setuptools]
