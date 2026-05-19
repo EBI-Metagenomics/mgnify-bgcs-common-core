@@ -206,6 +206,11 @@ def _parse_obo(obo_path: Path) -> dict[str, dict]:
         for line in fh:
             line = line.rstrip("\n")
             if line == "[Term]":
+                # Save the previous term (if any) before starting a new one —
+                # the upstream ChemOnt OBO is pure [Term] stanzas with no other
+                # stanza types to delimit them.
+                if current and current["id"]:
+                    terms[current["id"]] = current
                 current = {
                     "id": "",
                     "name": "",
