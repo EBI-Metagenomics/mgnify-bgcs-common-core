@@ -85,7 +85,7 @@ def compute_composite_similarity_gpu(
                 shape=coo.shape,
             )
 
-    sim_gpu.setdiag(0)
+    sim_gpu.setdiag(cp.asarray(0, dtype=sim_gpu.dtype))
     sim_gpu.eliminate_zeros()
     sim_gpu_t = sim_gpu.T
     sim_gpu = cusp.csr_matrix(cp.maximum(sim_gpu.todense(), sim_gpu_t.todense()))
