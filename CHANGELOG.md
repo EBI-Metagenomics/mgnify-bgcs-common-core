@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.4.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.3.0...mgnify-bgcs-common-core-v1.4.0) (2026-06-02)
+
+
+### Features
+
+* **bgc clustering:** Support local clustering for portal deployment ([5fdd0bf](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/5fdd0bf183d8c99f037651b44fa0f22e26ecb823))
+* **NP preds:** Support CHEMONT to GENE using CHAMOIS results ([5efc45c](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/5efc45c474c1e9669feea4e04777ac79269f693a))
+
+
+### Bug Fixes
+
+* **clustering:** score validated NRB novelty as 0 via decoupled validated-similarity block ([7bb5ceb](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/7bb5ceb7d4e9d5c11af24446468524acdc3223c7))
+* **gpu clustering:** Add array ref to sim_gpu.setdiag ([bf0cf17](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/bf0cf171b1edf5caeb79b5ea8117d5f7550166dd))
+* **NP predictions:** gene - chemont asociation scores ([1b00d31](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/1b00d3104683972ae4b9117533b9d667427e25b6))
+
+
+### Performance Improvements
+
+* **bgc_aggregator:** Change esm model from 600M to 300M params ([62294d9](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/62294d9f755e109296fb6223f38df19e332d9114))
+
 ## [1.3.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.2.0...mgnify-bgcs-common-core-v1.3.0) (2026-04-13)
 
 
