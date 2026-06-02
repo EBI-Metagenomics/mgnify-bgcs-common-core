@@ -17,9 +17,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-CLUSTER_SEGMENT = "cluster"
-
-
 # ── Novelty + domain novelty ────────────────────────────────────────────────
 
 
@@ -190,6 +187,10 @@ def build_ltree_paths(
 ) -> tuple[dict[int, str], list[dict]]:
     """Map per-level labels to ltree paths and produce GCF node records.
 
+    A leaf path looks like ``42.7.3`` — one dot-separated segment per level,
+    each the parent-scoped community index (no ``cluster`` prefix, no
+    zero-padding). Numeric labels are valid ltree labels.
+
     Returns:
         leaf_path_per_row: ``{ibgc_id: leaf_family_path}``
         nodes: list of dicts ready for the gcf_nodes parquet table; each has
@@ -220,7 +221,7 @@ def build_ltree_paths(
         ),
     )
     for idx, lbl in enumerate(level0):
-        path = f"{CLUSTER_SEGMENT}.{idx:04d}"
+        path = f"{idx}"
         label_parent_path[(0, lbl)] = ""
         label_path[(0, lbl)] = path
 
@@ -238,7 +239,7 @@ def build_ltree_paths(
                 ),
             )
             for idx, lbl in enumerate(ordered):
-                path = f"{parent_path}.{idx:04d}"
+                path = f"{parent_path}.{idx}"
                 label_parent_path[(d, lbl)] = parent_path
                 label_path[(d, lbl)] = path
 
