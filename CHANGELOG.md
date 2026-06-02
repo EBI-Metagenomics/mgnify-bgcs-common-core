@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.4.1...mgnify-bgcs-common-core-v1.5.0) (2026-06-02)
+
+
+### Features
+
+* **clustering:** Support compact naming of GCF/clusters ([9439e14](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/9439e14f69416828b4bd727201b8a8d82fcdc29e))
+
 ## [1.4.1](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.4.0...mgnify-bgcs-common-core-v1.4.1) (2026-06-02)
 
 
