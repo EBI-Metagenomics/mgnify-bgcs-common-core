@@ -23,11 +23,78 @@ CLUSTER_SEGMENT = "cluster"
 # ── Novelty + domain novelty ────────────────────────────────────────────────
 
 
+def compute_novelty_against_validated(
+    M_domains: "sp.csr_matrix",
+    M_pairs: "sp.csr_matrix",
+    validated_cols: list[int],
+    *,
+    weights: tuple[float, float] = (0.5, 0.5),
+) -> "np.ndarray":
+    """Per-row ``1 − max(composite_dice_sim_to_validated)``.
+
+    Unlike :func:`compute_novelty_array`, this does **not** reuse the
+    clustering similarity matrix. That matrix has its diagonal zeroed and is
+    pruned (``prune_below``) so KNN / Leiden see clean edges — both of which
+    corrupt novelty:
+
+    * the zeroed diagonal drops a validated NRB's self-match (sim 1.0), so a
+      validated row would be scored against *other* validated NRBs and come
+      out ``> 0`` instead of ``0``;
+    * pruning truncates near-threshold similarities to 0, inflating the
+      novelty of non-validated rows whose nearest validated neighbour sits
+      just under the prune cutoff.
+
+    Here the composite Dice block (rows × validated-columns) is recomputed
+    unpruned and with the diagonal intact, so a validated NRB's self-Dice of
+    1.0 yields novelty 0 *by construction*. Validated rows are additionally
+    clamped to 0.0 to cover the degenerate empty-signature case (self-Dice
+    undefined → 0). Returns all-NaN when there are no validated NRBs.
+    """
+    import numpy as np
+
+    n_rows = M_domains.shape[0]
+    if not validated_cols:
+        return np.full(n_rows, np.nan, dtype=np.float32)
+
+    w_d, w_a = weights
+    total = float(w_d) + float(w_a)
+    if total <= 0:
+        raise ValueError(f"weights must sum > 0, got {weights}")
+    w_d, w_a = w_d / total, w_a / total
+
+    val = np.asarray(sorted(validated_cols), dtype=np.int64)
+
+    block: "np.ndarray | None" = None
+    for M, w in ((M_domains, w_d), (M_pairs, w_a)):
+        if w <= 0:
+            continue
+        Mf = M.astype(np.float32)
+        sizes = np.asarray(Mf.sum(axis=1), dtype=np.float32).ravel()
+        # rows × |validated| intersection counts (validated set is small).
+        inter = np.asarray((Mf @ Mf[val].T).todense(), dtype=np.float32)
+        denom = sizes[:, None] + sizes[val][None, :]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            dice = np.where(denom > 0.0, 2.0 * inter / denom, 0.0).astype(np.float32)
+        block = w * dice if block is None else block + w * dice
+
+    max_sim = block.max(axis=1)
+    novelty = (1.0 - max_sim).astype(np.float32)
+    novelty[val] = 0.0
+    return novelty
+
+
 def compute_novelty_array(
     sim: "sp.csr_matrix",
     validated_cols: list[int],
 ) -> "np.ndarray":
-    """Per-row ``1 − max(sim_to_validated)``; NaN when there are no validated NRBs."""
+    """Per-row ``1 − max(sim_to_validated)``; NaN when there are no validated NRBs.
+
+    .. deprecated::
+        Reuses the clustering similarity matrix (diagonal zeroed + pruned),
+        which mis-scores validated rows and near-threshold non-validated rows.
+        Use :func:`compute_novelty_against_validated`. Retained only for
+        backward-compatible callers / tests.
+    """
     import numpy as np
 
     n_rows = sim.shape[0]

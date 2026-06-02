@@ -5,7 +5,8 @@ sparse vec @ M_primaries.T), take top-K, derive:
 
   * umap_x / umap_y — similarity-weighted mean of the top-K primaries' coords
   * leaf_path — weighted-majority vote of the top-K primaries' leaf paths
-  * novelty_score — 1 − max(sim_to_validated_primary)
+  * novelty_score — 1 − max(sim_to_validated_primary); forced to 0 when the
+    partial is itself validated (it matches itself, so it is not novel)
   * domain_novelty — fraction of the partial's domains absent from any primary
     of the assigned leaf GCF
 
@@ -37,6 +38,7 @@ def project_partials(
     M_dom_q: "sp.csr_matrix",
     M_pair_q: "sp.csr_matrix",
     partial_nrb_ids,
+    validated_nrb_ids=None,
     weights: tuple[float, float] = (0.5, 0.5),
     knn_k: int = 5,
     min_total_similarity: float = 0.1,
@@ -58,6 +60,14 @@ def project_partials(
 
     partial_nrb_ids_arr = np.asarray(partial_nrb_ids, dtype=np.int64)
     validated_set = set(pri_validated_rows)
+    # NRB ids that are themselves validated — a validated partial is, by
+    # definition, not novel (it matches itself), so its novelty is forced to
+    # 0 regardless of similarity to the primary validated set.
+    validated_id_set = (
+        {int(x) for x in np.asarray(validated_nrb_ids).tolist()}
+        if validated_nrb_ids is not None
+        else set()
+    )
 
     # Cache per-leaf primary column-sums on the primary domain matrix.
     leaf_to_rows: dict[str, list[int]] = defaultdict(list)
@@ -111,7 +121,9 @@ def project_partials(
         best_leaf, _ = votes.most_common(1)[0]
 
         novelty: float | None = None
-        if validated_set:
+        if int(partial_nrb_ids_arr[q_row]) in validated_id_set:
+            novelty = 0.0
+        elif validated_set:
             max_sim_validated = 0.0
             for col, val in zip(cols.tolist(), vals.tolist()):
                 if col in validated_set and val > max_sim_validated:

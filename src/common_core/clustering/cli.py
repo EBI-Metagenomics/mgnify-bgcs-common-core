@@ -28,7 +28,7 @@ from common_core.clustering.scoring import (
     annotate_gcf_nodes,
     build_ltree_paths,
     compute_domain_novelty_array,
-    compute_novelty_array,
+    compute_novelty_against_validated,
 )
 
 log = logging.getLogger("bgc-cluster")
@@ -124,8 +124,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
     coords = _layout(graph, sim, seed=seed)
 
     # 6. novelty + domain_novelty
+    # Novelty is computed against a freshly-built, unpruned, diagonal-intact
+    # composite-Dice block (NOT the pruned/zeroed `sim` used for KNN/Leiden):
+    # a validated NRB's self-match then yields novelty 0 by construction.
     validated_cols = _validated_cols(inputs.nrb_ids, inputs.validated_nrb_ids)
-    novelty = compute_novelty_array(sim, validated_cols)
+    novelty = compute_novelty_against_validated(
+        inputs.M_domains, inputs.M_pairs, validated_cols, weights=weights,
+    )
     domain_novelty = compute_domain_novelty_array(inputs.M_domains, leaf_paths)
 
     # 7. partial-NRB projection (bundled here so the portal never has to run it)
@@ -137,6 +142,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         pri_coords=primary_coords,
         pri_leaf_paths=leaf_paths,
         pri_validated_rows=validated_cols,
+        validated_nrb_ids=inputs.validated_nrb_ids,
         M_dom_q=inputs.partials_M_domains,
         M_pair_q=inputs.partials_M_pairs,
         partial_nrb_ids=inputs.partials_nrb_ids,
@@ -239,6 +245,7 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
         pri_coords=coords,
         pri_leaf_paths=leaf_paths,
         pri_validated_rows=validated_cols,
+        validated_nrb_ids=inputs.validated_nrb_ids,
         M_dom_q=partials_dom,
         M_pair_q=partials_pair,
         partial_nrb_ids=partials_ids,
