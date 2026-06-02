@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.4.0...mgnify-bgcs-common-core-v1.4.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **clustering:** apply nrb→ibgc rename to match portal Phase 2f contract ([11f1862](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/11f186225358758e6034074f873cbd24dd2ec441))
+
 ## [1.4.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.3.0...mgnify-bgcs-common-core-v1.4.0) (2026-06-02)
 
 
