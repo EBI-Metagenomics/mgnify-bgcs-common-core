@@ -1,4 +1,4 @@
-"""Project partial NRBs onto the primary clustering.
+"""Project partial iBGCs onto the primary clustering.
 
 For each partial we compute composite-Dice against every primary (a single
 sparse vec @ M_primaries.T), take top-K, derive:
@@ -31,14 +31,14 @@ def project_partials(
     *,
     M_dom_pri: "sp.csr_matrix",
     M_pair_pri: "sp.csr_matrix",
-    pri_nrb_ids,
+    pri_ibgc_ids,
     pri_coords: "np.ndarray",
     pri_leaf_paths: list[str],
     pri_validated_rows: list[int],
     M_dom_q: "sp.csr_matrix",
     M_pair_q: "sp.csr_matrix",
-    partial_nrb_ids,
-    validated_nrb_ids=None,
+    partial_ibgc_ids,
+    validated_ibgc_ids=None,
     weights: tuple[float, float] = (0.5, 0.5),
     knn_k: int = 5,
     min_total_similarity: float = 0.1,
@@ -46,7 +46,7 @@ def project_partials(
     """Return ``(assignments, n_skipped)``.
 
     ``assignments`` is a list of dicts ready for the partial_assignments
-    parquet: nrb_id, leaf_path, umap_x, umap_y, novelty_score, domain_novelty.
+    parquet: ibgc_id, leaf_path, umap_x, umap_y, novelty_score, domain_novelty.
     """
     import numpy as np
     import scipy.sparse as sp
@@ -58,14 +58,14 @@ def project_partials(
     if n_partial == 0 or n_primary == 0:
         return [], n_partial
 
-    partial_nrb_ids_arr = np.asarray(partial_nrb_ids, dtype=np.int64)
+    partial_ibgc_ids_arr = np.asarray(partial_ibgc_ids, dtype=np.int64)
     validated_set = set(pri_validated_rows)
-    # NRB ids that are themselves validated — a validated partial is, by
+    # iBGC ids that are themselves validated — a validated partial is, by
     # definition, not novel (it matches itself), so its novelty is forced to
     # 0 regardless of similarity to the primary validated set.
     validated_id_set = (
-        {int(x) for x in np.asarray(validated_nrb_ids).tolist()}
-        if validated_nrb_ids is not None
+        {int(x) for x in np.asarray(validated_ibgc_ids).tolist()}
+        if validated_ibgc_ids is not None
         else set()
     )
 
@@ -121,7 +121,7 @@ def project_partials(
         best_leaf, _ = votes.most_common(1)[0]
 
         novelty: float | None = None
-        if int(partial_nrb_ids_arr[q_row]) in validated_id_set:
+        if int(partial_ibgc_ids_arr[q_row]) in validated_id_set:
             novelty = 0.0
         elif validated_set:
             max_sim_validated = 0.0
@@ -147,7 +147,7 @@ def project_partials(
 
         assignments.append(
             {
-                "nrb_id": int(partial_nrb_ids_arr[q_row]),
+                "ibgc_id": int(partial_ibgc_ids_arr[q_row]),
                 "leaf_path": best_leaf,
                 "umap_x": umap_x,
                 "umap_y": umap_y,

@@ -1,6 +1,6 @@
 """HPC-side BGC clustering: composite-Dice, KNN, hierarchical Leiden, UMAP.
 
-The portal exports per-NRB signature matrices and asks an HPC job to produce
+The portal exports per-iBGC signature matrices and asks an HPC job to produce
 the hierarchy, coordinates, and novelty scores. The ``bgc-cluster`` CLI is
 the entry point; everything in this package is pure compute, no Django.
 

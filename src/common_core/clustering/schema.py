@@ -35,16 +35,16 @@ class ClusteringInputs:
     M_pairs: "sp.csr_matrix"
     domain_accs: "np.ndarray"
     pair_vocab: "np.ndarray"
-    nrb_ids: "np.ndarray"
+    ibgc_ids: "np.ndarray"
 
     # Partials share the column vocab with the primaries (same domain_accs /
     # pair_vocab). Row count may be zero if there are no partials.
     partials_M_domains: "sp.csr_matrix"
     partials_M_pairs: "sp.csr_matrix"
-    partials_nrb_ids: "np.ndarray"
+    partials_ibgc_ids: "np.ndarray"
 
-    # Subset of nrb_ids whose source DashboardBgcs include is_validated=True.
-    validated_nrb_ids: "np.ndarray"
+    # Subset of ibgc_ids whose source DashboardBgcs include is_validated=True.
+    validated_ibgc_ids: "np.ndarray"
 
     params: RunParams
 
@@ -53,11 +53,11 @@ class ClusteringInputs:
 class ClusteringOutputs:
     """What the HPC job emits in the output tarball."""
 
-    # Per-row leaf path; aligned to nrb_ids.
+    # Per-row leaf path; aligned to ibgc_ids.
     leaf_paths: list[str]
     # Per-level integer labels: levels[d][v] is the label for vertex v at depth d.
     levels: list[list[int]]
-    # (n_nrbs, 2) float64; aligned to nrb_ids; normalised to [-10, 10].
+    # (n_ibgcs, 2) float64; aligned to ibgc_ids; normalised to [-10, 10].
     coords: "np.ndarray"
     # Per-row novelty_score / domain_novelty; NaN means "leave NULL in DB".
     novelty_score: "np.ndarray"
@@ -66,7 +66,7 @@ class ClusteringOutputs:
     # GCF tree nodes (roots, internals, leaves) — one record per node.
     gcf_nodes: list[dict]
 
-    # Partial NRB projections; one record per successfully projected partial.
+    # Partial iBGC projections; one record per successfully projected partial.
     partial_assignments: list[dict]
 
     # Run metadata.

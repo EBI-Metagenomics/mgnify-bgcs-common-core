@@ -1,7 +1,7 @@
 """Novelty + domain-novelty scoring, plus medoid / hierarchy path helpers.
 
 Pure NumPy / SciPy. Same numerics as the portal's
-``services.clustering.nrb_scoring`` and ``services.clustering.paths``.
+``services.clustering.ibgc_scoring`` and ``services.clustering.paths``.
 """
 
 from __future__ import annotations
@@ -37,18 +37,18 @@ def compute_novelty_against_validated(
     pruned (``prune_below``) so KNN / Leiden see clean edges — both of which
     corrupt novelty:
 
-    * the zeroed diagonal drops a validated NRB's self-match (sim 1.0), so a
-      validated row would be scored against *other* validated NRBs and come
+    * the zeroed diagonal drops a validated iBGC's self-match (sim 1.0), so a
+      validated row would be scored against *other* validated iBGCs and come
       out ``> 0`` instead of ``0``;
     * pruning truncates near-threshold similarities to 0, inflating the
       novelty of non-validated rows whose nearest validated neighbour sits
       just under the prune cutoff.
 
     Here the composite Dice block (rows × validated-columns) is recomputed
-    unpruned and with the diagonal intact, so a validated NRB's self-Dice of
+    unpruned and with the diagonal intact, so a validated iBGC's self-Dice of
     1.0 yields novelty 0 *by construction*. Validated rows are additionally
     clamped to 0.0 to cover the degenerate empty-signature case (self-Dice
-    undefined → 0). Returns all-NaN when there are no validated NRBs.
+    undefined → 0). Returns all-NaN when there are no validated iBGCs.
     """
     import numpy as np
 
@@ -87,7 +87,7 @@ def compute_novelty_array(
     sim: "sp.csr_matrix",
     validated_cols: list[int],
 ) -> "np.ndarray":
-    """Per-row ``1 − max(sim_to_validated)``; NaN when there are no validated NRBs.
+    """Per-row ``1 − max(sim_to_validated)``; NaN when there are no validated iBGCs.
 
     .. deprecated::
         Reuses the clustering similarity matrix (diagonal zeroed + pruned),
@@ -186,23 +186,23 @@ def pick_medoid(member_indices: list[int], sim: "sp.csr_matrix") -> int:
 
 def build_ltree_paths(
     levels: list[list[int]],
-    nrb_ids,
+    ibgc_ids,
 ) -> tuple[dict[int, str], list[dict]]:
     """Map per-level labels to ltree paths and produce GCF node records.
 
     Returns:
-        leaf_path_per_row: ``{nrb_id: leaf_family_path}``
+        leaf_path_per_row: ``{ibgc_id: leaf_family_path}``
         nodes: list of dicts ready for the gcf_nodes parquet table; each has
             family_path, parent_path, level, member_indices.
     """
     import numpy as np
 
     n_levels = len(levels)
-    n = len(nrb_ids) if hasattr(nrb_ids, "__len__") else 0
+    n = len(ibgc_ids) if hasattr(ibgc_ids, "__len__") else 0
     if n == 0 or n_levels == 0:
         return {}, []
 
-    nrb_ids_arr = nrb_ids if isinstance(nrb_ids, np.ndarray) else np.asarray(list(nrb_ids))
+    ibgc_ids_arr = ibgc_ids if isinstance(ibgc_ids, np.ndarray) else np.asarray(list(ibgc_ids))
 
     label_to_vertices: dict[tuple[int, int], list[int]] = defaultdict(list)
     for d in range(n_levels):
@@ -257,7 +257,7 @@ def build_ltree_paths(
     paths_per_row: dict[int, str] = {}
     for v in range(n):
         leaf_lbl = levels[leaf_level][v]
-        paths_per_row[int(nrb_ids_arr[v])] = label_path[(leaf_level, leaf_lbl)]
+        paths_per_row[int(ibgc_ids_arr[v])] = label_path[(leaf_level, leaf_lbl)]
 
     log.info(
         "build_ltree_paths: %d nodes across %d levels", len(nodes), n_levels,
@@ -268,15 +268,15 @@ def build_ltree_paths(
 def annotate_gcf_nodes(
     nodes: list[dict],
     sim: "sp.csr_matrix",
-    nrb_ids,
+    ibgc_ids,
 ) -> list[dict]:
-    """Add representative_nrb_id, member_count, descendant_count to every node.
+    """Add representative_ibgc_id, member_count, descendant_count to every node.
 
     Mutates and returns ``nodes`` in place.
     """
     import numpy as np
 
-    nrb_ids_arr = nrb_ids if isinstance(nrb_ids, np.ndarray) else np.asarray(list(nrb_ids))
+    ibgc_ids_arr = ibgc_ids if isinstance(ibgc_ids, np.ndarray) else np.asarray(list(ibgc_ids))
 
     parent_children_count: dict[str, int] = defaultdict(int)
     for node in nodes:
@@ -288,7 +288,7 @@ def annotate_gcf_nodes(
         node["member_count"] = len(members)
         node["descendant_count"] = parent_children_count.get(node["family_path"], 0)
         medoid_v = pick_medoid(members, sim)
-        node["representative_nrb_id"] = int(nrb_ids_arr[medoid_v])
+        node["representative_ibgc_id"] = int(ibgc_ids_arr[medoid_v])
 
     # Drop the bulky per-node member list — it isn't shipped in the parquet.
     for node in nodes:

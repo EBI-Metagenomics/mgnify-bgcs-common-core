@@ -4,26 +4,26 @@ The input tarball is produced by the portal's ``export_clustering_inputs``
 management command. The output tarball is consumed by ``import_clustering_results``.
 
 File layout (input):
-    M_domains.npz                — sparse CSR uint8, primary NRBs × domain vocab
-    M_pairs.npz                  — sparse CSR uint8, primary NRBs × pair vocab
+    M_domains.npz                — sparse CSR uint8, primary iBGCs × domain vocab
+    M_pairs.npz                  — sparse CSR uint8, primary iBGCs × pair vocab
     domain_accs.npy              — object array of accession strings
     pair_vocab.npy               — object array of (acc_a, acc_b) tuples
-    nrb_ids.npy                  — int64, primary NRB pks (row-aligned)
-    partials_M_domains.npz       — partial NRBs × same domain vocab (may be empty)
-    partials_M_pairs.npz         — partial NRBs × same pair vocab (may be empty)
-    partials_nrb_ids.npy         — int64, partial NRB pks
-    validated.npy                — int64, subset of nrb_ids (validated NRBs)
+    ibgc_ids.npy                  — int64, primary iBGC pks (row-aligned)
+    partials_M_domains.npz       — partial iBGCs × same domain vocab (may be empty)
+    partials_M_pairs.npz         — partial iBGCs × same pair vocab (may be empty)
+    partials_ibgc_ids.npy         — int64, partial iBGC pks
+    validated.npy                — int64, subset of ibgc_ids (validated iBGCs)
     params.json                  — RunParams as JSON
 
 File layout (output):
     clustering_run.json          — sha256, params, counts, library versions, device
-    hierarchy.parquet            — nrb_id, level_0, level_1, …, leaf_path
+    hierarchy.parquet            — ibgc_id, level_0, level_1, …, leaf_path
     gcf_nodes.parquet            — family_path, parent_path, level,
                                    member_count, descendant_count,
-                                   representative_nrb_id
-    coords.parquet               — nrb_id, umap_x, umap_y
-    scores.parquet               — nrb_id, novelty_score, domain_novelty
-    partial_assignments.parquet  — nrb_id, leaf_path, umap_x, umap_y,
+                                   representative_ibgc_id
+    coords.parquet               — ibgc_id, umap_x, umap_y
+    scores.parquet               — ibgc_id, novelty_score, domain_novelty
+    partial_assignments.parquet  — ibgc_id, leaf_path, umap_x, umap_y,
                                    novelty_score, domain_novelty
 """
 
@@ -68,14 +68,14 @@ def write_inputs_tarball(out_path: Path, inputs: ClusteringInputs) -> Path:
         sp.save_npz(scratch / "M_pairs.npz", inputs.M_pairs)
         np.save(scratch / "domain_accs.npy", np.asarray(inputs.domain_accs, dtype=object))
         np.save(scratch / "pair_vocab.npy", np.asarray(inputs.pair_vocab, dtype=object))
-        np.save(scratch / "nrb_ids.npy", np.asarray(inputs.nrb_ids, dtype=np.int64))
+        np.save(scratch / "ibgc_ids.npy", np.asarray(inputs.ibgc_ids, dtype=np.int64))
         sp.save_npz(scratch / "partials_M_domains.npz", inputs.partials_M_domains)
         sp.save_npz(scratch / "partials_M_pairs.npz", inputs.partials_M_pairs)
         np.save(
-            scratch / "partials_nrb_ids.npy",
-            np.asarray(inputs.partials_nrb_ids, dtype=np.int64),
+            scratch / "partials_ibgc_ids.npy",
+            np.asarray(inputs.partials_ibgc_ids, dtype=np.int64),
         )
-        np.save(scratch / "validated.npy", np.asarray(inputs.validated_nrb_ids, dtype=np.int64))
+        np.save(scratch / "validated.npy", np.asarray(inputs.validated_ibgc_ids, dtype=np.int64))
         (scratch / "params.json").write_text(json.dumps(_params_as_jsonable(inputs.params)))
 
         with tarfile.open(out_path, "w:gz") as tf:
@@ -84,10 +84,10 @@ def write_inputs_tarball(out_path: Path, inputs: ClusteringInputs) -> Path:
                 "M_pairs.npz",
                 "domain_accs.npy",
                 "pair_vocab.npy",
-                "nrb_ids.npy",
+                "ibgc_ids.npy",
                 "partials_M_domains.npz",
                 "partials_M_pairs.npz",
-                "partials_nrb_ids.npy",
+                "partials_ibgc_ids.npy",
                 "validated.npy",
                 "params.json",
             ):
@@ -113,11 +113,11 @@ def read_inputs_tarball(path: Path) -> ClusteringInputs:
             M_pairs=sp.load_npz(scratch / "M_pairs.npz"),
             domain_accs=np.load(scratch / "domain_accs.npy", allow_pickle=True),
             pair_vocab=np.load(scratch / "pair_vocab.npy", allow_pickle=True),
-            nrb_ids=np.load(scratch / "nrb_ids.npy"),
+            ibgc_ids=np.load(scratch / "ibgc_ids.npy"),
             partials_M_domains=sp.load_npz(scratch / "partials_M_domains.npz"),
             partials_M_pairs=sp.load_npz(scratch / "partials_M_pairs.npz"),
-            partials_nrb_ids=np.load(scratch / "partials_nrb_ids.npy"),
-            validated_nrb_ids=np.load(scratch / "validated.npy"),
+            partials_ibgc_ids=np.load(scratch / "partials_ibgc_ids.npy"),
+            validated_ibgc_ids=np.load(scratch / "validated.npy"),
             params=params,
         )
 
@@ -144,7 +144,7 @@ def write_outputs_tarball(
         # clustering_run.json — everything the importer needs about the run
         run_json = {
             "sha256": outputs.sha256,
-            "n_nrbs": int(inputs.M_domains.shape[0]),
+            "n_ibgcs": int(inputs.M_domains.shape[0]),
             "n_levels": len(outputs.levels),
             "n_root_communities": outputs.n_root_communities,
             "n_leaf_communities": outputs.n_leaf_communities,
@@ -156,10 +156,10 @@ def write_outputs_tarball(
         }
         (scratch / "clustering_run.json").write_text(json.dumps(run_json, indent=2))
 
-        # hierarchy.parquet — one row per primary NRB
+        # hierarchy.parquet — one row per primary iBGC
         n_levels = len(outputs.levels)
         hierarchy_cols: dict[str, list] = {
-            "nrb_id": [int(x) for x in inputs.nrb_ids.tolist()],
+            "ibgc_id": [int(x) for x in inputs.ibgc_ids.tolist()],
             "leaf_path": list(outputs.leaf_paths),
         }
         for d in range(n_levels):
@@ -173,7 +173,7 @@ def write_outputs_tarball(
             "level",
             "member_count",
             "descendant_count",
-            "representative_nrb_id",
+            "representative_ibgc_id",
         ]
         gcf_cols = {key: [node[key] for node in outputs.gcf_nodes] for key in gcf_keys}
         pq.write_table(pa.table(gcf_cols), scratch / "gcf_nodes.parquet")
@@ -183,7 +183,7 @@ def write_outputs_tarball(
         pq.write_table(
             pa.table(
                 {
-                    "nrb_id": [int(x) for x in inputs.nrb_ids.tolist()],
+                    "ibgc_id": [int(x) for x in inputs.ibgc_ids.tolist()],
                     "umap_x": coords[:, 0].tolist() if coords.size else [],
                     "umap_y": coords[:, 1].tolist() if coords.size else [],
                 }
@@ -196,8 +196,8 @@ def write_outputs_tarball(
         dn = np.asarray(outputs.domain_novelty, dtype=np.float64)
         scores_table = pa.table(
             {
-                "nrb_id": pa.array(
-                    [int(x) for x in inputs.nrb_ids.tolist()], type=pa.int64()
+                "ibgc_id": pa.array(
+                    [int(x) for x in inputs.ibgc_ids.tolist()], type=pa.int64()
                 ),
                 "novelty_score": pa.array(_nan_to_none(nv), type=pa.float64()),
                 "domain_novelty": pa.array(_nan_to_none(dn), type=pa.float64()),
@@ -207,7 +207,7 @@ def write_outputs_tarball(
 
         # partial_assignments.parquet — variable length
         partial_keys = [
-            "nrb_id",
+            "ibgc_id",
             "leaf_path",
             "umap_x",
             "umap_y",

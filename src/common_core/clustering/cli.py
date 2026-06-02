@@ -1,7 +1,7 @@
 """``bgc-cluster`` — HPC entry point.
 
 Subcommands:
-  run               full clustering pipeline (primary NRBs + partials)
+  run               full clustering pipeline (primary iBGCs + partials)
   project-partials  partial-only projection (used rarely; primarily for
                     re-projecting partials against an existing primary run)
 
@@ -75,10 +75,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     inputs = read_inputs_tarball(Path(args.input))
     log.info(
-        "loaded inputs: M_domains=%s M_pairs=%s nrb_ids=%d partials=%d validated=%d",
+        "loaded inputs: M_domains=%s M_pairs=%s ibgc_ids=%d partials=%d validated=%d",
         inputs.M_domains.shape, inputs.M_pairs.shape,
-        len(inputs.nrb_ids), len(inputs.partials_nrb_ids),
-        len(inputs.validated_nrb_ids),
+        len(inputs.ibgc_ids), len(inputs.partials_ibgc_ids),
+        len(inputs.validated_ibgc_ids),
     )
 
     # Pipeline parameter resolution. CLI overrides params.json when supplied.
@@ -89,7 +89,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     n_primary = inputs.M_domains.shape[0]
     if n_primary == 0:
-        log.error("no primary NRBs in input tarball — nothing to cluster")
+        log.error("no primary iBGCs in input tarball — nothing to cluster")
         return 1
 
     effective_k = int(knn_k) if knn_k is not None and knn_k != "auto" else _auto_knn_k(n_primary)
@@ -112,9 +112,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     levels = _hl(graph, resolutions=resolutions, seed=seed)
 
     # 4. ltree paths + GCF tree
-    leaf_paths_map, gcf_nodes = build_ltree_paths(levels, inputs.nrb_ids)
-    leaf_paths = [leaf_paths_map[int(x)] for x in inputs.nrb_ids.tolist()]
-    annotate_gcf_nodes(gcf_nodes, sim, inputs.nrb_ids)
+    leaf_paths_map, gcf_nodes = build_ltree_paths(levels, inputs.ibgc_ids)
+    leaf_paths = [leaf_paths_map[int(x)] for x in inputs.ibgc_ids.tolist()]
+    annotate_gcf_nodes(gcf_nodes, sim, inputs.ibgc_ids)
 
     # 5. 2D layout
     if device == "gpu":
@@ -126,26 +126,26 @@ def _cmd_run(args: argparse.Namespace) -> int:
     # 6. novelty + domain_novelty
     # Novelty is computed against a freshly-built, unpruned, diagonal-intact
     # composite-Dice block (NOT the pruned/zeroed `sim` used for KNN/Leiden):
-    # a validated NRB's self-match then yields novelty 0 by construction.
-    validated_cols = _validated_cols(inputs.nrb_ids, inputs.validated_nrb_ids)
+    # a validated iBGC's self-match then yields novelty 0 by construction.
+    validated_cols = _validated_cols(inputs.ibgc_ids, inputs.validated_ibgc_ids)
     novelty = compute_novelty_against_validated(
         inputs.M_domains, inputs.M_pairs, validated_cols, weights=weights,
     )
     domain_novelty = compute_domain_novelty_array(inputs.M_domains, leaf_paths)
 
-    # 7. partial-NRB projection (bundled here so the portal never has to run it)
+    # 7. partial-iBGC projection (bundled here so the portal never has to run it)
     primary_coords = coords
     partial_assignments, n_skipped = project_partials(
         M_dom_pri=inputs.M_domains,
         M_pair_pri=inputs.M_pairs,
-        pri_nrb_ids=inputs.nrb_ids,
+        pri_ibgc_ids=inputs.ibgc_ids,
         pri_coords=primary_coords,
         pri_leaf_paths=leaf_paths,
         pri_validated_rows=validated_cols,
-        validated_nrb_ids=inputs.validated_nrb_ids,
+        validated_ibgc_ids=inputs.validated_ibgc_ids,
         M_dom_q=inputs.partials_M_domains,
         M_pair_q=inputs.partials_M_pairs,
-        partial_nrb_ids=inputs.partials_nrb_ids,
+        partial_ibgc_ids=inputs.partials_ibgc_ids,
         weights=weights,
         knn_k=effective_k,
     )
@@ -161,7 +161,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         knn_k=effective_k,
         leiden_resolutions=resolutions,
         seed=seed,
-        nrb_etag=f"{len(inputs.nrb_ids)}:{int(inputs.nrb_ids[-1]) if len(inputs.nrb_ids) else 0}",
+        ibgc_etag=f"{len(inputs.ibgc_ids)}:{int(inputs.ibgc_ids[-1]) if len(inputs.ibgc_ids) else 0}",
         domain_etag=f"{inputs.M_domains.nnz}:{inputs.M_domains.shape[1]}",
     )
 
@@ -206,8 +206,8 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
     """Project a fresh batch of partials against a previous primary run.
 
     Reads:
-      --input         input tarball used by the primary run (for M_*_pri + nrb_ids)
-      --partials      tarball with partial signature matrices + nrb_ids and
+      --input         input tarball used by the primary run (for M_*_pri + ibgc_ids)
+      --partials      tarball with partial signature matrices + ibgc_ids and
                       the primary run's leaf_paths and coords (parquet)
       --output        tarball with partial_assignments only
 
@@ -230,25 +230,25 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
         meta = json.loads((scratch / "primary_meta.json").read_text())
         partials_dom = sp.load_npz(scratch / "partials_M_domains.npz")
         partials_pair = sp.load_npz(scratch / "partials_M_pairs.npz")
-        partials_ids = np.load(scratch / "partials_nrb_ids.npy")
+        partials_ids = np.load(scratch / "partials_ibgc_ids.npy")
 
     weights = tuple(meta.get("score_weights") or DEFAULT_WEIGHTS)
     knn_k = int(meta.get("knn_k") or _auto_knn_k(inputs.M_domains.shape[0]))
     leaf_paths = list(meta.get("leaf_paths") or [])
     coords = np.asarray(meta.get("coords") or [[0.0, 0.0]] * inputs.M_domains.shape[0])
-    validated_cols = _validated_cols(inputs.nrb_ids, inputs.validated_nrb_ids)
+    validated_cols = _validated_cols(inputs.ibgc_ids, inputs.validated_ibgc_ids)
 
     assignments, _ = project_partials(
         M_dom_pri=inputs.M_domains,
         M_pair_pri=inputs.M_pairs,
-        pri_nrb_ids=inputs.nrb_ids,
+        pri_ibgc_ids=inputs.ibgc_ids,
         pri_coords=coords,
         pri_leaf_paths=leaf_paths,
         pri_validated_rows=validated_cols,
-        validated_nrb_ids=inputs.validated_nrb_ids,
+        validated_ibgc_ids=inputs.validated_ibgc_ids,
         M_dom_q=partials_dom,
         M_pair_q=partials_pair,
-        partial_nrb_ids=partials_ids,
+        partial_ibgc_ids=partials_ids,
         weights=weights,
         knn_k=knn_k,
     )
@@ -258,7 +258,7 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    keys = ["nrb_id", "leaf_path", "umap_x", "umap_y", "novelty_score", "domain_novelty"]
+    keys = ["ibgc_id", "leaf_path", "umap_x", "umap_y", "novelty_score", "domain_novelty"]
     cols = {k: [row.get(k) for row in assignments] for k in keys}
     with tempfile.TemporaryDirectory() as scratch:
         scratch = Path(scratch)
@@ -293,10 +293,10 @@ def _auto_knn_k(n: int) -> int:
     return max(KNN_K_FLOOR, math.ceil(math.log(n)))
 
 
-def _validated_cols(nrb_ids, validated_nrb_ids) -> list[int]:
-    nrb_ids_list = [int(x) for x in nrb_ids.tolist()]
-    id_to_row = {nid: i for i, nid in enumerate(nrb_ids_list)}
-    validated_set = {int(x) for x in validated_nrb_ids.tolist()}
+def _validated_cols(ibgc_ids, validated_ibgc_ids) -> list[int]:
+    ibgc_ids_list = [int(x) for x in ibgc_ids.tolist()]
+    id_to_row = {nid: i for i, nid in enumerate(ibgc_ids_list)}
+    validated_set = {int(x) for x in validated_ibgc_ids.tolist()}
     return sorted(id_to_row[nid] for nid in validated_set if nid in id_to_row)
 
 
@@ -314,7 +314,7 @@ def _compute_run_sha(
     knn_k: int,
     leiden_resolutions: tuple[float, ...],
     seed: int,
-    nrb_etag: str,
+    ibgc_etag: str,
     domain_etag: str,
 ) -> str:
     payload = "|".join(
@@ -324,7 +324,7 @@ def _compute_run_sha(
             f"k={knn_k}",
             "res=" + ",".join(f"{r:.6f}" for r in leiden_resolutions),
             f"seed={seed}",
-            f"nrb_etag={nrb_etag}",
+            f"ibgc_etag={ibgc_etag}",
             f"domain_etag={domain_etag}",
         ]
     )
