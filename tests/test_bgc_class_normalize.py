@@ -34,6 +34,21 @@ from common_core.bgc_class import (
         # substring collision: fungal_cdps must beat cdps (both nrps anyway)
         ("fungal_cdps", {"NRP"}),
         ("CDPS", {"NRP"}),
+        # antiSMASH 8 also stages bare category names alongside granular types.
+        # "NRP"'s antiSMASH *type* is "nrps", so the base-name fallback is what
+        # keeps it out of "Other".
+        ("NRP", {"NRP"}),
+        ("Terpene", {"Terpene"}),
+        ("Polyketide", {"Polyketide"}),
+        ("RiPP", {"RiPP"}),
+        ("Saccharide", {"Saccharide"}),
+        ("Other", {"Other"}),
+        # mixed granular + category in one hybrid path
+        ("NRP_T1PKS", {"NRP", "Polyketide"}),
+        # antiSMASH 7.x RiPP types absent from the master schema
+        ("thiopeptide", {"RiPP"}),
+        ("LAP", {"RiPP"}),
+        ("LAP_thiopeptide", {"RiPP"}),
     ],
 )
 def test_antismash_categories(raw, expected):

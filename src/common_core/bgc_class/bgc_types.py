@@ -165,6 +165,12 @@ _ANTISMASH_TYPES_RAW: dict[str, str] = {
     "rre-containing": "ripp",
     "phosphonate-like": "other",
     "terpene-precursor": "terpene",
+    # antiSMASH 7.x RiPP types not present in the current master bgc_types.sql
+    # (kept here so older staged runs still classify correctly).
+    "thiopeptide": "ripp",
+    "lap": "ripp",
+    "lanthipeptide": "ripp",
+    "lassopeptide-like": "ripp",
 }
 
 # Public, staged-file-normalised form: '-' -> '_'.
