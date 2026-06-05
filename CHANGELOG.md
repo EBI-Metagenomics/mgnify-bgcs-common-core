@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.5.0...mgnify-bgcs-common-core-v1.6.0) (2026-06-05)
+
+
+### Features
+
+* Support BGC class standardization for all tools ([0943f40](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/0943f40f18d217f59f56ff43ca9b59bf9335abc5))
+
 ## [1.5.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.4.1...mgnify-bgcs-common-core-v1.5.0) (2026-06-02)
 
 
