@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.1](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.6.0...mgnify-bgcs-common-core-v1.6.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* classify antiSMASH base-category names and missing RiPP types ([61efc10](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/61efc10e455c43365d5c82538eee2a3874bb2db0))
+* classify antiSMASH base-category names and missing RiPP types ([b2fe722](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/b2fe722d3c253995efeb41ee9cb38bfce19b86db))
+
 ## [1.6.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.5.0...mgnify-bgcs-common-core-v1.6.0) (2026-06-05)
 
 
