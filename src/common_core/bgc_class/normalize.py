@@ -50,14 +50,31 @@ def _atoms(raw: str) -> list[str]:
     return [a for a in raw.lower().replace("-", "_").split("_") if a]
 
 
+def _resolve_antismash_token(candidate: str) -> str | None:
+    """Resolve one ``_``-joined atom-run to a base class, or None.
+
+    antiSMASH 8 stages a mix of *granular product types* (``terpene_precursor``,
+    ``nrps_like``, ``rre_containing``) and its own *category names*
+    (``NRP``, ``Terpene``, ``Polyketide``, …). Try the granular vocabulary
+    first (more specific), then fall back to the base-class names so a bare
+    ``NRP`` — whose antiSMASH *type* is ``nrps`` — still maps to ``NRP`` rather
+    than ``Other``.
+    """
+    category = ANTISMASH_TYPE_TO_CATEGORY.get(candidate)
+    if category is not None:
+        return ANTISMASH_CATEGORY_TO_BASE[category]
+    return BASE_NAME_TO_CLASS.get(candidate)
+
+
 def _antismash_categories(raw: str) -> set[str]:
     """Greedy longest-atom-run match of an antiSMASH path to base classes.
 
-    Atoms are joined back with ``_`` and probed against the vocabulary from
-    longest run to shortest, so multi-atom types (``nrps_like``,
-    ``rre_containing``, ``acyl_amino_acids``) and substring collisions
-    (``fungal_cdps`` before ``cdps``) resolve correctly. An atom that matches
-    nothing is logged and contributes ``Other``.
+    Atoms are joined back with ``_`` and probed from longest run to shortest,
+    so multi-atom types (``nrps_like``, ``rre_containing``, ``acyl_amino_acids``)
+    and substring collisions (``fungal_cdps`` before ``cdps``) resolve
+    correctly. Each atom-run is checked against both the granular antiSMASH
+    vocabulary and the base-class names. An atom that matches nothing is logged
+    and contributes ``Other``.
     """
     atoms = _atoms(raw)
     n = len(atoms)
@@ -66,10 +83,9 @@ def _antismash_categories(raw: str) -> set[str]:
     while i < n:
         matched = False
         for j in range(n, i, -1):
-            candidate = "_".join(atoms[i:j])
-            category = ANTISMASH_TYPE_TO_CATEGORY.get(candidate)
-            if category is not None:
-                cats.add(ANTISMASH_CATEGORY_TO_BASE[category])
+            base = _resolve_antismash_token("_".join(atoms[i:j]))
+            if base is not None:
+                cats.add(base)
                 i = j
                 matched = True
                 break
