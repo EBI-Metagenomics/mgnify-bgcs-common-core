@@ -150,6 +150,12 @@ def normalize_similarity(
 
     Divides by the maximum IC across all terms so the result is
     compatible with a 0–1 threshold slider.
+
+    .. note::
+        Dividing by the global max IC compresses scores heavily (even a
+        perfect match lands well below 1.0), which makes a 0–1 threshold
+        slider unintuitive. Prefer :func:`semantic_similarity`, which uses
+        Lin similarity so identical term sets score 1.0.
     """
     if not ic_values:
         return 0.0
@@ -157,3 +163,57 @@ def normalize_similarity(
     if max_ic <= 0:
         return 0.0
     return min(raw_bma / max_ic, 1.0)
+
+
+def lin_similarity(
+    t1: str,
+    t2: str,
+    ic_values: dict[str, float],
+    ontology: ChemOntOntology,
+    *,
+    _mica_cache: dict[tuple[str, str], float] | None = None,
+) -> float:
+    """Lin similarity between two ChemOnt terms, in [0, 1].
+
+    Lin(t1, t2) = 2·IC(MICA) / (IC(t1) + IC(t2)). Identical terms score 1.0;
+    terms sharing only an uninformative ancestor score near 0. Unlike raw
+    Resnik IC, this is already normalized, so a BMA over Lin values yields a
+    meaningful 0–1 similarity.
+    """
+    mica_ic = resnik_similarity(t1, t2, ic_values, ontology, _mica_cache=_mica_cache)
+    denom = ic_values.get(t1, 0.0) + ic_values.get(t2, 0.0)
+    if denom <= 0:
+        return 0.0
+    return min(2.0 * mica_ic / denom, 1.0)
+
+
+def semantic_similarity(
+    query_terms: list[str],
+    target_terms: list[str],
+    ic_values: dict[str, float],
+    ontology: ChemOntOntology,
+) -> float:
+    """Symmetric Best Match Average over Lin similarity, in [0, 1].
+
+    For each query term, take its best Lin match among the target terms (and
+    vice versa); the score is the mean of all best matches. Identical term
+    sets score 1.0, so the result maps directly onto a 0–1 threshold slider.
+
+    Returns 0.0 if either set is empty.
+    """
+    if not query_terms or not target_terms:
+        return 0.0
+
+    cache: dict[tuple[str, str], float] = {}
+
+    query_best = [
+        max(lin_similarity(qt, tt, ic_values, ontology, _mica_cache=cache) for tt in target_terms)
+        for qt in query_terms
+    ]
+    target_best = [
+        max(lin_similarity(tt, qt, ic_values, ontology, _mica_cache=cache) for qt in query_terms)
+        for tt in target_terms
+    ]
+
+    all_scores = query_best + target_best
+    return sum(all_scores) / len(all_scores)
