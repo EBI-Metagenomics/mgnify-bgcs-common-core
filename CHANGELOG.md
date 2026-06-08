@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.6.1...mgnify-bgcs-common-core-v1.7.0) (2026-06-08)
+
+
+### Features
+
+* Support ClassyFire using API ([80dbbd6](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/80dbbd69b722e0e541e73c76e1143a29f7dacf44))
+
 ## [1.6.1](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.6.0...mgnify-bgcs-common-core-v1.6.1) (2026-06-05)
 
 
