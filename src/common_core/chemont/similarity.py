@@ -217,3 +217,35 @@ def semantic_similarity(
 
     all_scores = query_best + target_best
     return sum(all_scores) / len(all_scores)
+
+
+def coverage_similarity(
+    query_terms: list[str],
+    target_terms: list[str],
+    ic_values: dict[str, float],
+    ontology: ChemOntOntology,
+) -> float:
+    """Asymmetric coverage of the target by the query, in [0, 1].
+
+    For each *target* term, take its best Lin match among the query terms; the
+    score is the mean over target terms. It answers *"how well are the target's
+    classes explained by the query?"* — so a query that contains all of the
+    target's chemistry scores 1.0 regardless of any extra query terms.
+
+    Unlike :func:`semantic_similarity` (symmetric BMA), this does not penalise a
+    rich query for classes the target lacks — the right behaviour when matching
+    a fully-characterised structure against a cluster's (often sparser) predicted
+    classes. Direction matters: ``coverage_similarity(query, target)`` ≠
+    ``coverage_similarity(target, query)``.
+
+    Returns 0.0 if either set is empty.
+    """
+    if not query_terms or not target_terms:
+        return 0.0
+
+    cache: dict[tuple[str, str], float] = {}
+    target_best = [
+        max(lin_similarity(tt, qt, ic_values, ontology, _mica_cache=cache) for qt in query_terms)
+        for tt in target_terms
+    ]
+    return sum(target_best) / len(target_best)

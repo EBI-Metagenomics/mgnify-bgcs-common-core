@@ -22,6 +22,7 @@ from common_core.chemont.ontology import (
 from common_core.chemont.similarity import (
     best_match_average,
     compute_ic_values,
+    coverage_similarity,
     lin_similarity,
     normalize_similarity,
     resnik_similarity,
@@ -40,6 +41,7 @@ __all__ = [
     "classify_smiles",
     "classify_smiles_batch",
     "compute_ic_values",
+    "coverage_similarity",
     "get_ontology",
     "lin_similarity",
     "lookup_chemont_ids",

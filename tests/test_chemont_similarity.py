@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from common_core.chemont.similarity import lin_similarity, semantic_similarity
+from common_core.chemont.similarity import (
+    coverage_similarity,
+    lin_similarity,
+    semantic_similarity,
+)
 
 # Hierarchy:  A (root) ─ B ─┬─ C
 #                            └─ D
@@ -57,3 +61,23 @@ def test_semantic_partial_overlap_between_zero_and_one():
 def test_semantic_empty_set_is_zero():
     assert semantic_similarity([], ["C"], _IC, ONT) == 0.0
     assert semantic_similarity(["C"], [], _IC, ONT) == 0.0
+
+
+def test_coverage_full_when_query_contains_target():
+    # Target [C] fully covered by query [C, D] (exact match present) → 1.0,
+    # regardless of the extra query term D.
+    assert coverage_similarity(["C", "D"], ["C"], _IC, ONT) == pytest.approx(1.0)
+
+
+def test_coverage_is_asymmetric():
+    # query [C] covering target [C, D]: lin(C,C)=1, lin(D,C)=1/3 → mean 2/3.
+    fwd = coverage_similarity(["C"], ["C", "D"], _IC, ONT)
+    rev = coverage_similarity(["C", "D"], ["C"], _IC, ONT)
+    assert fwd == pytest.approx((1.0 + 1.0 / 3.0) / 2.0)
+    assert rev == pytest.approx(1.0)
+    assert fwd != rev
+
+
+def test_coverage_empty_set_is_zero():
+    assert coverage_similarity([], ["C"], _IC, ONT) == 0.0
+    assert coverage_similarity(["C"], [], _IC, ONT) == 0.0
