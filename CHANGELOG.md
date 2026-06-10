@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.7.0...mgnify-bgcs-common-core-v1.8.0) (2026-06-10)
+
+
+### Features
+
+* **chemical searches:** Support coverage_similarity for ChemOnt term similarity ([c215339](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/c21533940ff4eae5100ffa347f166da9a35d106d))
+
 ## [1.7.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.6.1...mgnify-bgcs-common-core-v1.7.0) (2026-06-08)
 
 
