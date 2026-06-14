@@ -74,8 +74,18 @@ def compute_composite_similarity_gpu(
     *,
     weights: tuple[float, float] = (0.5, 0.5),
     prune_below: float = 0.05,
+    block: int = 4096,
 ) -> "sp.csr_matrix":
-    """GPU composite similarity. Returns a host-side scipy CSR."""
+    """GPU composite similarity, fused per row-block.
+
+    Returns a host-side scipy CSR. Computes both intersection matmuls
+    (M_domains and M_pairs) over the same row block, combines weighted,
+    drops entries below ``prune_below`` before accumulating. This keeps
+    the working set bounded by per-block nnz rather than the global
+    unpruned intersection count, which can exceed 10^9 entries at
+    production scale (observed: ~4×10^9 on n≈130k) and OOM the device
+    even before reduction.
+    """
     import cupy as cp
     import cupyx.scipy.sparse as cusp
     import scipy.sparse as sp
@@ -84,42 +94,101 @@ def compute_composite_similarity_gpu(
         raise ValueError(
             f"row mismatch: M_domains={M_domains.shape}, M_pairs={M_pairs.shape}"
         )
+    n = M_domains.shape[0]
     w_d, w_a = weights
     total = float(w_d) + float(w_a)
     if total <= 0:
         raise ValueError(f"weights must sum > 0, got {weights}")
     w_d, w_a = w_d / total, w_a / total
 
-    sim_d = dice_similarity_gpu(M_domains) if w_d > 0 else None
-    sim_a = dice_similarity_gpu(M_pairs) if w_a > 0 else None
+    Mfd = cusp.csr_matrix(M_domains.astype("float32")) if w_d > 0 else None
+    Mfa = cusp.csr_matrix(M_pairs.astype("float32")) if w_a > 0 else None
+    MfdT = Mfd.T.tocsr() if Mfd is not None else None
+    MfaT = Mfa.T.tocsr() if Mfa is not None else None
+    sizes_d = Mfd.sum(axis=1).ravel().astype(cp.float32) if Mfd is not None else None
+    sizes_a = Mfa.sum(axis=1).ravel().astype(cp.float32) if Mfa is not None else None
 
-    if sim_d is not None and sim_a is not None:
-        sim_gpu = (w_d * sim_d) + (w_a * sim_a)
-    elif sim_d is not None:
-        sim_gpu = w_d * sim_d
-    else:
-        sim_gpu = w_a * sim_a  # type: ignore[operator]
+    rows_chunks: list = []
+    cols_chunks: list = []
+    data_chunks: list = []
+    total_inter = 0
+    total_kept = 0
 
-    sim_gpu = sim_gpu.tocsr()
-    if prune_below > 0.0 and sim_gpu.nnz:
-        coo = sim_gpu.tocoo()
+    def _block_csr(Mf, MfT, sizes, weight, start, end):
+        inter = (Mf[start:end] @ MfT).tocoo()
+        nnz = int(inter.nnz)
+        if nnz == 0:
+            return None, 0
+        rr = inter.row + start
+        cc = inter.col
+        denom = sizes[rr] + sizes[cc]
+        safe = denom > 0
+        vals = cp.zeros(nnz, dtype=cp.float32)
+        vals[safe] = weight * (2.0 * inter.data[safe] / denom[safe])
+        return (
+            cusp.csr_matrix(
+                (vals, (inter.row, inter.col)),
+                shape=(end - start, n),
+                dtype=cp.float32,
+            ),
+            nnz,
+        )
+
+    for start in range(0, n, block):
+        end = min(start + block, n)
+        parts = []
+        if Mfd is not None:
+            d_csr, d_nnz = _block_csr(Mfd, MfdT, sizes_d, w_d, start, end)
+            total_inter += d_nnz
+            if d_csr is not None:
+                parts.append(d_csr)
+        if Mfa is not None:
+            a_csr, a_nnz = _block_csr(Mfa, MfaT, sizes_a, w_a, start, end)
+            total_inter += a_nnz
+            if a_csr is not None:
+                parts.append(a_csr)
+        if not parts:
+            continue
+
+        combo = parts[0]
+        for part in parts[1:]:
+            combo = combo + part
+        coo = combo.tocoo()
         keep = coo.data >= prune_below
-        if int(keep.sum().item()) != coo.nnz:
-            sim_gpu = cusp.csr_matrix(
-                (coo.data[keep], (coo.row[keep], coo.col[keep])),
-                shape=coo.shape,
-            )
+        n_keep = int(keep.sum().item())
+        if n_keep == 0:
+            continue
+        rows_chunks.append(coo.row[keep] + start)
+        cols_chunks.append(coo.col[keep])
+        data_chunks.append(coo.data[keep])
+        total_kept += n_keep
 
-    sim_gpu.setdiag(cp.asarray(0, dtype=sim_gpu.dtype))
-    sim_gpu.eliminate_zeros()
-    # Symmetrise on host. Densifying on device allocated two n*n*4 byte
-    # buffers (≈63 GiB at n=130k float32) and OOMed an 80 GiB A100; cupyx's
-    # sparse .maximum() is NotImplementedError. scipy's sparse .maximum()
-    # works fine, and the host transfer happens here anyway.
+    log.info(
+        "compute_composite_similarity_gpu: shape=(%d, %d) inter_nnz=%d kept(>=%.3f)=%d "
+        "w=(%.3f,%.3f) block=%d",
+        n, n, total_inter, prune_below, total_kept, w_d, w_a, block,
+    )
+
+    if not rows_chunks:
+        return sp.csr_matrix((n, n), dtype="float32")
+
+    rows = cp.concatenate(rows_chunks)
+    cols = cp.concatenate(cols_chunks)
+    data = cp.concatenate(data_chunks)
+    # Drop the diagonal — clustering treats self-similarity as 0.
+    off_diag = rows != cols
+    rows = rows[off_diag]
+    cols = cols[off_diag]
+    data = data[off_diag]
+
+    sim_gpu = cusp.csr_matrix((data, (rows, cols)), shape=(n, n), dtype=cp.float32)
+    # Symmetrise on host. cupyx's sparse .maximum() raises NotImplementedError;
+    # densifying on device allocates n*n*4 byte buffers and OOMs. scipy's sparse
+    # .maximum() is O(nnz) and well-tested.
     sim_host = sp.csr_matrix(sim_gpu.get())
     sim_host = sim_host.maximum(sim_host.T).tocsr()
     log.info(
-        "compute_composite_similarity_gpu: shape=%s nnz=%d w=(%.3f,%.3f)",
-        sim_host.shape, sim_host.nnz, w_d, w_a,
+        "compute_composite_similarity_gpu: final nnz=%d",
+        sim_host.nnz,
     )
     return sim_host
