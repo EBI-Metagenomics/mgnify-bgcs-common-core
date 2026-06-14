@@ -18,27 +18,52 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def dice_similarity_gpu(M: "sp.csr_matrix"):
-    """Sørensen-Dice on device, returns a cupy CSR."""
+def dice_similarity_gpu(M: "sp.csr_matrix", *, block: int = 4096):
+    """Sørensen-Dice on device, returns a cupy CSR.
+
+    The intersection ``Mf @ Mf.T`` is computed in row-blocks of ``block``
+    rows. cupyx's CSR SpGEMM silently returns an empty result when the
+    full-shape output exceeds cuSPARSE's legacy nnz workspace limits
+    (observed at n=129,777 with ~2.2M input nnz: the full call returned
+    nnz=0). Chunking keeps each per-call output well under the limit;
+    block size trades device memory for the number of SpGEMM launches.
+    """
     import cupy as cp
     import cupyx.scipy.sparse as cusp
 
-    if M.shape[0] == 0:
+    n = M.shape[0]
+    if n == 0:
         return cusp.csr_matrix((0, 0), dtype=cp.float32)
 
     Mf_gpu = cusp.csr_matrix(M.astype("float32"))
-    inter = (Mf_gpu @ Mf_gpu.T).tocoo()
-    if inter.nnz == 0:
-        return cusp.csr_matrix(inter.shape, dtype=cp.float32)
-
+    MfT_gpu = Mf_gpu.T.tocsr()
     sizes = Mf_gpu.sum(axis=1).ravel().astype(cp.float32)
-    denom = sizes[inter.row] + sizes[inter.col]
-    safe = denom > 0
-    values = cp.zeros_like(inter.data, dtype=cp.float32)
-    values[safe] = 2.0 * inter.data[safe] / denom[safe]
-    sim = cusp.csr_matrix(
-        (values, (inter.row, inter.col)), shape=inter.shape, dtype=cp.float32,
-    )
+
+    rows_chunks: list = []
+    cols_chunks: list = []
+    data_chunks: list = []
+    for start in range(0, n, block):
+        end = min(start + block, n)
+        block_inter = (Mf_gpu[start:end] @ MfT_gpu).tocoo()
+        if block_inter.nnz == 0:
+            continue
+        rr = block_inter.row + start
+        cc = block_inter.col
+        denom = sizes[rr] + sizes[cc]
+        safe = denom > 0
+        if not bool(safe.any()):
+            continue
+        rows_chunks.append(rr[safe])
+        cols_chunks.append(cc[safe])
+        data_chunks.append(2.0 * block_inter.data[safe] / denom[safe])
+
+    if not rows_chunks:
+        return cusp.csr_matrix((n, n), dtype=cp.float32)
+
+    rows = cp.concatenate(rows_chunks)
+    cols = cp.concatenate(cols_chunks)
+    data = cp.concatenate(data_chunks)
+    sim = cusp.csr_matrix((data, (rows, cols)), shape=(n, n), dtype=cp.float32)
     sim.eliminate_zeros()
     return sim
 
