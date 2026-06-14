@@ -87,11 +87,12 @@ def compute_composite_similarity_gpu(
 
     sim_gpu.setdiag(cp.asarray(0, dtype=sim_gpu.dtype))
     sim_gpu.eliminate_zeros()
-    sim_gpu_t = sim_gpu.T
-    sim_gpu = cusp.csr_matrix(cp.maximum(sim_gpu.todense(), sim_gpu_t.todense()))
-    # Convert back to host as scipy CSR — downstream KNN / Leiden / scoring
-    # work on host, and the size is fine for a single transfer.
+    # Symmetrise on host. Densifying on device allocated two n*n*4 byte
+    # buffers (≈63 GiB at n=130k float32) and OOMed an 80 GiB A100; cupyx's
+    # sparse .maximum() is NotImplementedError. scipy's sparse .maximum()
+    # works fine, and the host transfer happens here anyway.
     sim_host = sp.csr_matrix(sim_gpu.get())
+    sim_host = sim_host.maximum(sim_host.T).tocsr()
     log.info(
         "compute_composite_similarity_gpu: shape=%s nnz=%d w=(%.3f,%.3f)",
         sim_host.shape, sim_host.nnz, w_d, w_a,
