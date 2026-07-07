@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.8.0...mgnify-bgcs-common-core-v1.9.0) (2026-07-07)
+
+
+### Features
+
+* **metrics:** add shared BGC-detection metric core ([8c45476](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/8c45476d6515a07f25178b60e0c803d5e5f2ede5))
+
+
+### Bug Fixes
+
+* **clustering:** chunk SpGEMM in dice_similarity_gpu ([16f612a](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/16f612a77dfb1f37c3a8d7e2aa4ea59a40f9236b))
+* **clustering:** fuse per-block composite to bound GPU memory ([e4a69a7](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/e4a69a750982c6e797714a32c6c1a8d31550f6bc))
+* **clustering:** symmetrise GPU composite-Dice on host ([0e9b560](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/0e9b56079499abb15f08520b6dfc72d3df7ff374))
+* **gbk:** unwrap wrapped identifier qualifiers after SeqIO.write ([2d3e07c](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/2d3e07c451934a5211481fadae07660c21accb51))
+
 ## [1.8.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.7.0...mgnify-bgcs-common-core-v1.8.0) (2026-06-10)
 
 
