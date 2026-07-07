@@ -32,6 +32,14 @@ chemont = [
   "pydantic-settings>=2",
   "PyYAML>=6",
 ]
+ml = [
+  # Metric primitives + losses that pull in the ML stack. Kept as an extra so
+  # the portal / ETL side of the monorepo can install common-core without torch.
+  "torch>=2.7",
+  "numpy>=2.0",
+  "scikit-learn>=1.5",
+  "scipy>=1.13",
+]
 hpc-cpu = [
   "numpy>=2.0",
   "scipy>=1.13",
