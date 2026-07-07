@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 from common_core.config_loader import LoaderOptions, load_settings
+from common_core.gbk_id_utils import unwrap_id_qualifiers_inplace
 from common_core.logging_setup import LoggingConfig, setup_logging
 from common_core.versioning import dist_version
 
@@ -117,6 +118,7 @@ def extract_bgc_regions(
 
         out_path = out_dir / f"{sub.id}.gbk"
         SeqIO.write([sub], str(out_path), "genbank")
+        unwrap_id_qualifiers_inplace(out_path)
         written += 1
 
     return written

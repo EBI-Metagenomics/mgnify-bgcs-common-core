@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 from common_core.config_loader import LoaderOptions, load_settings
+from common_core.gbk_id_utils import unwrap_id_qualifiers_inplace
 from common_core.io import open_text
 from common_core.logging_setup import LoggingConfig, setup_logging
 from common_core.versioning import dist_version
@@ -92,6 +93,7 @@ def filter_gbk(gbk_path: Path, out_path: Path, passing: Set[str]) -> int:
     with _open_seq(gbk_path) as fh:
         kept = [r for r in SeqIO.parse(fh, "genbank") if r.id in passing]
     SeqIO.write(kept, str(out_path), "genbank")
+    unwrap_id_qualifiers_inplace(out_path)
     return len(kept)
 
 
