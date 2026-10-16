@@ -13,7 +13,7 @@ import gzip
 import logging
 import re
 from pathlib import Path
-from typing import Optional, Set
+from typing import Dict, Optional, Set
 
 from Bio import SeqIO
 from pydantic import BaseModel, Field
@@ -60,24 +60,16 @@ class FilterSettings(BaseSettings):
 # ---------------------------------------------------------------------------
 
 
-def _passing_contig_ids_from_fna(fna_path: Path, min_length: int) -> Set[str]:
-    """Return set of contig IDs whose sequences are >= *min_length*."""
-    passing: Set[str] = set()
+def _contig_lengths_from_fna(fna_path: Path) -> Dict[str, int]:
+    """Return ``{contig_id: length}`` for every FASTA record."""
     with _open_seq(fna_path) as fh:
-        for record in SeqIO.parse(fh, "fasta"):
-            if len(record.seq) >= min_length:
-                passing.add(record.id)
-    return passing
+        return {record.id: len(record.seq) for record in SeqIO.parse(fh, "fasta")}
 
 
-def _passing_contig_ids_from_gbk(gbk_path: Path, min_length: int) -> Set[str]:
-    """Return set of contig IDs from GenBank records >= *min_length*."""
-    passing: Set[str] = set()
+def _contig_lengths_from_gbk(gbk_path: Path) -> Dict[str, int]:
+    """Return ``{contig_id: length}`` for every GenBank record."""
     with _open_seq(gbk_path) as fh:
-        for record in SeqIO.parse(fh, "genbank"):
-            if len(record.seq) >= min_length:
-                passing.add(record.id)
-    return passing
+        return {record.id: len(record.seq) for record in SeqIO.parse(fh, "genbank")}
 
 
 def filter_fna(fna_path: Path, out_path: Path, passing: Set[str]) -> int:
@@ -126,25 +118,132 @@ def _contig_id_from_description(description: str) -> str | None:
     return m.group(1) if m else None
 
 
-def filter_faa(faa_path: Path, out_path: Path, passing: Set[str]) -> int:
+# CDS attributes that carry the identifier used as the FAA record ID.
+# ``Name`` is deliberately excluded: Prokka/Bakta use it for gene symbols
+# (e.g. ``rssB_1``), which are not unique protein identifiers.
+_GFF_PROTEIN_ID_KEYS = ("ID", "locus_tag", "protein_id")
+_GBK_PROTEIN_ID_KEYS = ("locus_tag", "protein_id")
+
+
+def _protein_contig_map_from_gff(gff_path: Path) -> Dict[str, str]:
+    """Map protein identifiers to their contig using the CDS features of a GFF.
+
+    Covers annotators whose protein IDs do not embed the contig ID, e.g.
+    Prokka locus tags (``MGYG000296006_00001`` on contig ``MGYG000296006_1``).
+    """
+    mapping: Dict[str, str] = {}
+    with open_text(gff_path) as fh:
+        for line in fh:
+            if line.startswith("##FASTA"):
+                break
+            if line.startswith("#"):
+                continue
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) < 9 or cols[2] != "CDS":
+                continue
+            for attr in cols[8].split(";"):
+                key, sep, value = attr.partition("=")
+                if sep and key.strip() in _GFF_PROTEIN_ID_KEYS and value.strip():
+                    mapping.setdefault(value.strip(), cols[0])
+    return mapping
+
+
+def _protein_contig_map_from_gbk(gbk_path: Path) -> Dict[str, str]:
+    """Map protein identifiers to their contig using the CDS features of a GBK."""
+    mapping: Dict[str, str] = {}
+    with _open_seq(gbk_path) as fh:
+        for record in SeqIO.parse(fh, "genbank"):
+            for feature in record.features:
+                if feature.type != "CDS":
+                    continue
+                for key in _GBK_PROTEIN_ID_KEYS:
+                    for value in feature.qualifiers.get(key, []):
+                        mapping.setdefault(value, record.id)
+    return mapping
+
+
+def _resolve_contig_id(
+    record_id: str,
+    description: str,
+    known_contigs: Set[str],
+    protein_to_contig: Optional[Dict[str, str]],
+) -> Optional[str]:
+    """Return the contig a protein belongs to, or ``None`` if unresolvable.
+
+    Resolution order: explicit annotation mapping (GFF/GBK CDS features),
+    Pyrodigal-style ``{contig_id}_{n}`` ID, then the first bracketed token
+    of a GBK-reversed FAA description.
+    """
+    if protein_to_contig:
+        contig_id = protein_to_contig.get(record_id)
+        if contig_id is not None:
+            return contig_id
+    contig_id = _contig_id_from_protein_id(record_id)
+    if contig_id in known_contigs:
+        return contig_id
+    contig_id = _contig_id_from_description(description)
+    if contig_id in known_contigs:
+        return contig_id
+    return None
+
+
+def filter_faa(
+    faa_path: Path,
+    out_path: Path,
+    passing: Set[str],
+    known_contigs: Optional[Set[str]] = None,
+    protein_to_contig: Optional[Dict[str, str]] = None,
+) -> int:
     """Keep proteins whose parent contig is in *passing*.
 
-    Supports two protein-ID conventions:
+    The parent contig is resolved with :func:`_resolve_contig_id`, which
+    supports three protein-ID conventions:
 
+    * **Annotation-mapped** — *protein_to_contig* (built from GFF/GBK CDS
+      features) maps IDs that do not embed the contig, e.g. Prokka locus tags.
     * **Pyrodigal-style** ``{contig_id}_{gene_number}`` — contig ID is derived
       by stripping the trailing ``_N`` numeric token from the sequence ID.
     * **GBK-reversed** — the contig ID is embedded in the FASTA description as
-      the first bracketed token, e.g. ``[MGYG000296008_6]``.  This fallback is
-      used when the Pyrodigal-derived ID is not in the passing set.
+      the first bracketed token, e.g. ``[MGYG000296008_6]``.
+
+    *known_contigs* is the full set of contig IDs before length filtering
+    (defaults to *passing*). Proteins that cannot be placed on any known
+    contig are dropped and counted; the count is logged at ERROR level when
+    *every* protein is unmapped (incompatible protein / contig IDs) so it is
+    never silent.
     """
+    known = known_contigs if known_contigs is not None else passing
     kept = []
+    total = 0
+    unresolved = []
     with _open_seq(faa_path) as fh:
         for r in SeqIO.parse(fh, "fasta"):
-            contig_id = _contig_id_from_protein_id(r.id)
-            if contig_id not in passing:
-                contig_id = _contig_id_from_description(r.description) or contig_id
-            if contig_id in passing:
+            total += 1
+            contig_id = _resolve_contig_id(
+                r.id, r.description, known, protein_to_contig
+            )
+            if contig_id is None:
+                unresolved.append(r.id)
+            elif contig_id in passing:
                 kept.append(r)
+
+    if unresolved:
+        # Logged rather than raised: the workflow's errorStrategy ``ignore``
+        # would otherwise drop the whole genome, including from runs that
+        # never consume the filtered FAA (e.g. precomputed InterProScan).
+        level = (
+            logging.ERROR if len(unresolved) == total and passing else logging.WARNING
+        )
+        log.log(
+            level,
+            "FAA: %d of %d proteins could not be mapped to a contig and were "
+            "dropped (e.g. %s). Provide a GFF/GBK whose CDS features carry these "
+            "IDs (ID / locus_tag / protein_id).",
+            len(unresolved),
+            total,
+            unresolved[:3],
+        )
+
     SeqIO.write(kept, str(out_path), "fasta")
     return len(kept)
 
@@ -180,14 +279,23 @@ def run(cfg: FilterSettings) -> None:
     if not has_fna and not has_gbk:
         raise SystemExit("At least one of --fna or --gbk must be provided.")
 
-    # Determine passing contig IDs from whichever source is available.
+    # Determine contig lengths from whichever source is available.
     # Prefer FNA if both are given (FASTA parsing is faster).
     if has_fna:
-        passing = _passing_contig_ids_from_fna(Path(io.fna), cfg.min_length)
-        log.info("FNA: %d contigs pass >= %d bp filter", len(passing), cfg.min_length)
+        lengths = _contig_lengths_from_fna(Path(io.fna))
+        source = "FNA"
     else:
-        passing = _passing_contig_ids_from_gbk(Path(io.gbk), cfg.min_length)
-        log.info("GBK: %d contigs pass >= %d bp filter", len(passing), cfg.min_length)
+        lengths = _contig_lengths_from_gbk(Path(io.gbk))
+        source = "GBK"
+    known = set(lengths)
+    passing = {cid for cid, n in lengths.items() if n >= cfg.min_length}
+    log.info(
+        "%s: %d of %d contigs pass >= %d bp filter",
+        source,
+        len(passing),
+        len(known),
+        cfg.min_length,
+    )
 
     if not passing:
         log.warning("No contigs passed the length filter — all outputs will be empty.")
@@ -202,7 +310,21 @@ def run(cfg: FilterSettings) -> None:
         log.info("GBK: wrote %d records", n)
 
     if io.faa is not None:
-        n = filter_faa(Path(io.faa), out_dir / "filtered.faa", passing)
+        # Map protein IDs to contigs from the annotation the FAA came with;
+        # needed when protein IDs do not embed the contig (Prokka locus tags).
+        if io.gff is not None:
+            protein_to_contig = _protein_contig_map_from_gff(Path(io.gff))
+        elif has_gbk:
+            protein_to_contig = _protein_contig_map_from_gbk(Path(io.gbk))
+        else:
+            protein_to_contig = None
+        n = filter_faa(
+            Path(io.faa),
+            out_dir / "filtered.faa",
+            passing,
+            known_contigs=known,
+            protein_to_contig=protein_to_contig,
+        )
         log.info("FAA: wrote %d records", n)
 
     if io.gff is not None:
