@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.1](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.9.0...mgnify-bgcs-common-core-v1.9.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **contig-filter:** map FAA proteins to contigs via GFF/GBK CDS features ([f1a5b73](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/f1a5b73def941b65fd4f7f6bc2bab9eb0870b333))
+* **contig-filter:** map FAA proteins to contigs via GFF/GBK CDS features ([a4df8aa](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/a4df8aa4b0a2216b7688b8077eb29194b699117f))
+
 ## [1.9.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.8.0...mgnify-bgcs-common-core-v1.9.0) (2026-07-07)
 
 
