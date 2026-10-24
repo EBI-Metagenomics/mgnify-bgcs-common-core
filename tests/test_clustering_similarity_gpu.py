@@ -81,3 +81,50 @@ def test_gpu_matches_cpu_on_small_fixture():
     np.testing.assert_allclose(a, b, rtol=0, atol=1e-6)
     # Symmetry — what the buggy densification was trying to enforce.
     np.testing.assert_allclose(b, b.T, rtol=0, atol=1e-6)
+
+
+@pytest.mark.parametrize("prune_below", [0.0, 0.05, 0.3])
+def test_gpu_matches_cpu_weighted_cosine(prune_below):
+    """GPU ``cosine_idf_enrich`` must match the CPU reference, incl. prune."""
+    cp = pytest.importorskip("cupy")
+    pytest.importorskip("cupyx.scipy.sparse")
+
+    try:
+        cp.zeros(1, dtype=cp.float32)
+    except Exception as exc:  # pragma: no cover — host-dependent
+        pytest.skip(f"no usable CUDA device: {exc}")
+
+    from common_core.clustering.gpu.similarity import (
+        compute_composite_similarity_gpu,
+    )
+    from common_core.clustering.similarity import compute_composite_similarity
+
+    rng = np.random.default_rng(0)
+    n, d_dom, d_pair = 64, 24, 40
+    M_domains = scipy_sparse.csr_matrix(
+        (rng.random((n, d_dom)) > 0.7).astype(np.uint8)
+    )
+    M_pairs = scipy_sparse.csr_matrix(
+        (rng.random((n, d_pair)) > 0.85).astype(np.uint8)
+    )
+    w_dom = rng.uniform(0.0, 3.0, d_dom).astype(np.float32)
+    w_pair = rng.uniform(0.0, 3.0, d_pair).astype(np.float32)
+    kw = {
+        "prune_below": prune_below,
+        "metric": "cosine_idf_enrich",
+        "domain_weights": w_dom,
+        "pair_weights": w_pair,
+    }
+
+    sim_cpu = compute_composite_similarity(M_domains, M_pairs, **kw)
+    # block < n so the row-block chunking is exercised.
+    sim_gpu = compute_composite_similarity_gpu(M_domains, M_pairs, block=16, **kw)
+
+    a = sim_cpu.toarray()
+    b = sim_gpu.toarray()
+    # Pruning is a hard threshold: entries within float noise of it may
+    # land on either side, so compare away from the boundary.
+    near = np.abs(np.maximum(a, b) - prune_below) < 1e-5
+    np.testing.assert_allclose(a[~near], b[~near], rtol=0, atol=1e-5)
+    np.testing.assert_allclose(b, b.T, rtol=0, atol=1e-6)
+    assert np.all(np.diag(b) == 0.0)

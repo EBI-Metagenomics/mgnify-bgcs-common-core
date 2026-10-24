@@ -2,6 +2,13 @@
 
 These mirror the on-disk layout described in the README and plan. Keep
 field names stable — the Django importer reads them by name.
+
+Schema versions:
+  1 — composite Dice only; ``params.json`` has no ``schema_version``.
+  2 — adds the similarity metric, its per-feature weight vectors
+      (``domain_weights.npy`` / ``pair_weights.npy``) and the prune /
+      projection thresholds. A v1 tarball reads as ``similarity_metric="dice"``
+      with the v1 thresholds, so older runs reproduce unchanged.
 """
 
 from __future__ import annotations
@@ -12,6 +19,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import numpy as np
     import scipy.sparse as sp
+
+SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -25,6 +34,13 @@ class RunParams:
     seed: int
     run_tag: str
     exporter_versions: dict[str, str] = field(default_factory=dict)
+    # v2 — see ADR 0003. Defaults are the v1 behaviour.
+    similarity_metric: str = "dice"  # "dice" | "cosine_idf_enrich"
+    domain_vocab: str = ""  # portal ClusteringRun.domain_vocab, e.g. "IPR_GAPFILLED"
+    enrichment_version: str = ""  # DomainEnrichment table version; "" for dice
+    prune_below: float = 0.05  # similarity-graph edge prune before KNN
+    min_projection_similarity: float = 0.1  # partials: min summed top-k similarity
+    schema_version: int = SCHEMA_VERSION
 
 
 @dataclass
@@ -47,6 +63,11 @@ class ClusteringInputs:
     validated_ibgc_ids: "np.ndarray"
 
     params: RunParams
+
+    # v2: per-feature weights for ``similarity_metric="cosine_idf_enrich"``,
+    # aligned to domain_accs / pair_vocab. None for Dice runs.
+    domain_weights: "np.ndarray | None" = None
+    pair_weights: "np.ndarray | None" = None
 
 
 @dataclass

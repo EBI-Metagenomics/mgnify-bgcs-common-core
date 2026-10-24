@@ -1,10 +1,17 @@
-"""Composite-Dice similarity on the two binary signature matrices.
+"""Composite similarity on the two binary signature matrices.
 
 Mirrors the portal's ``services.clustering.bgc_similarity.compute_composite_similarity``
-but kept pure-numpy/scipy and Django-free. The math is:
+but kept pure-numpy/scipy and Django-free. The composite is
 
-    sim = w_d · Dice(M_domains) + w_a · Dice(M_pairs)
-        Dice(M) = 2 · (M @ M.T) / (rowsum_i + rowsum_j)
+    sim = w_d · S(M_domains) + w_a · S(M_pairs)
+
+with ``S`` chosen by ``metric`` (ADR 0003):
+
+* ``"dice"`` — ``Dice(M) = 2 · (M @ M.T) / (rowsum_i + rowsum_j)``; the
+  original metric, kept so older runs stay reproducible.
+* ``"cosine_idf_enrich"`` — weighted cosine, ``X @ X.T`` with
+  ``X = rownorm(M · diag(w))`` and ``w = idf × enrich`` per feature (see
+  :mod:`common_core.clustering.weights`).
 
 Diagonal is zeroed and the result is symmetrised. The matmul is
 single-threaded; row-chunked parallelism is opt-in via ``matmul_workers``
@@ -17,9 +24,14 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import numpy as np
     import scipy.sparse as sp
 
 log = logging.getLogger(__name__)
+
+METRIC_DICE = "dice"
+METRIC_COSINE_IDF_ENRICH = "cosine_idf_enrich"
+SIMILARITY_METRICS: tuple[str, ...] = (METRIC_DICE, METRIC_COSINE_IDF_ENRICH)
 
 
 def dice_similarity(M: "sp.csr_matrix", *, matmul_workers: int = 1) -> "sp.csr_matrix":
@@ -52,6 +64,78 @@ def dice_similarity(M: "sp.csr_matrix", *, matmul_workers: int = 1) -> "sp.csr_m
     return sim
 
 
+def weighted_rows(M: "sp.csr_matrix", w: "np.ndarray") -> "sp.csr_matrix":
+    """``rownorm(M · diag(w))`` as float32 CSR; all-zero rows stay zero."""
+    import numpy as np
+    import scipy.sparse as sp
+
+    w = np.asarray(w, dtype=np.float32).ravel()
+    if w.shape[0] != M.shape[1]:
+        raise ValueError(f"weight length {w.shape[0]} ≠ feature count {M.shape[1]}")
+    X = (M.astype(np.float32) @ sp.diags(w)).tocsr()
+    norms = np.sqrt(np.asarray(X.multiply(X).sum(axis=1), dtype=np.float64).ravel())
+    inv = np.zeros_like(norms)
+    np.divide(1.0, norms, out=inv, where=norms > 0)
+    X = (sp.diags(inv.astype(np.float32)) @ X).tocsr()
+    X.eliminate_zeros()
+    return X
+
+
+def weighted_cosine_similarity(
+    M: "sp.csr_matrix", w: "np.ndarray", *, matmul_workers: int = 1,
+) -> "sp.csr_matrix":
+    """Weighted cosine ``Σ_{A∩B} w² / sqrt(Σ_A w² · Σ_B w²)``. CPU.
+
+    Values are clipped to 1.0 so float32 round-off on self-matches can't
+    push ``1 − sim`` (novelty) below zero.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+
+    if M.shape[0] == 0:
+        return sp.csr_matrix((0, 0), dtype=np.float32)
+
+    X = weighted_rows(M, w)
+    if matmul_workers <= 1:
+        sim = (X @ X.T).tocsr()
+    else:
+        sim = _matmul_chunked(X, matmul_workers)
+    sim = sim.astype(np.float32)
+    np.minimum(sim.data, 1.0, out=sim.data)
+    sim.eliminate_zeros()
+    return sim
+
+
+def check_metric(
+    metric: str,
+    M_domains: "sp.csr_matrix",
+    M_pairs: "sp.csr_matrix",
+    domain_weights,
+    pair_weights,
+) -> None:
+    """Raise ``ValueError`` on an unknown metric or missing / misaligned weights."""
+    if metric not in SIMILARITY_METRICS:
+        raise ValueError(f"unknown similarity metric {metric!r}; expected one of {SIMILARITY_METRICS}")
+    if metric == METRIC_DICE:
+        return
+    for name, M, w in (("domain", M_domains, domain_weights), ("pair", M_pairs, pair_weights)):
+        if w is None:
+            raise ValueError(f"metric {metric!r} needs {name}_weights")
+        if len(w) != M.shape[1]:
+            raise ValueError(
+                f"{name}_weights has {len(w)} entries but the matrix has {M.shape[1]} columns"
+            )
+
+
+def family_similarity(
+    M: "sp.csr_matrix", w, *, metric: str, matmul_workers: int = 1,
+) -> "sp.csr_matrix":
+    """One feature family (domains or pairs) under ``metric``."""
+    if metric == METRIC_DICE:
+        return dice_similarity(M, matmul_workers=matmul_workers)
+    return weighted_cosine_similarity(M, w, matmul_workers=matmul_workers)
+
+
 def compute_composite_similarity(
     M_domains: "sp.csr_matrix",
     M_pairs: "sp.csr_matrix",
@@ -59,17 +143,23 @@ def compute_composite_similarity(
     weights: tuple[float, float] = (0.5, 0.5),
     prune_below: float = 0.05,
     matmul_workers: int = 1,
+    metric: str = METRIC_DICE,
+    domain_weights: "np.ndarray | None" = None,
+    pair_weights: "np.ndarray | None" = None,
 ) -> "sp.csr_matrix":
-    """Weighted-mean Sørensen-Dice over both signature matrices.
+    """Weighted mean of the per-family similarities over both signature matrices.
 
-    Identical numerics to the portal's in-process pipeline so HPC and dev
-    results stay comparable. Pruning below ``prune_below`` mirrors the
+    ``metric="dice"`` (default) has identical numerics to the portal's
+    in-process pipeline so HPC and dev results stay comparable.
+    ``metric="cosine_idf_enrich"`` needs ``domain_weights`` / ``pair_weights``
+    aligned to the matrix columns. Pruning below ``prune_below`` mirrors the
     existing pipeline.
     """
     if M_domains.shape[0] != M_pairs.shape[0]:
         raise ValueError(
             f"row mismatch: M_domains={M_domains.shape}, M_pairs={M_pairs.shape}"
         )
+    check_metric(metric, M_domains, M_pairs, domain_weights, pair_weights)
 
     w_d, w_a = weights
     total = float(w_d) + float(w_a)
@@ -77,8 +167,16 @@ def compute_composite_similarity(
         raise ValueError(f"weights must sum > 0, got {weights}")
     w_d, w_a = w_d / total, w_a / total
 
-    sim_d = dice_similarity(M_domains, matmul_workers=matmul_workers) if w_d > 0 else None
-    sim_a = dice_similarity(M_pairs, matmul_workers=matmul_workers) if w_a > 0 else None
+    sim_d = (
+        family_similarity(M_domains, domain_weights, metric=metric, matmul_workers=matmul_workers)
+        if w_d > 0
+        else None
+    )
+    sim_a = (
+        family_similarity(M_pairs, pair_weights, metric=metric, matmul_workers=matmul_workers)
+        if w_a > 0
+        else None
+    )
 
     if sim_d is not None and sim_a is not None:
         sim = (w_d * sim_d) + (w_a * sim_a)
@@ -104,8 +202,8 @@ def compute_composite_similarity(
     sim.eliminate_zeros()
     sim = sim.maximum(sim.T).tocsr()
     log.info(
-        "compute_composite_similarity: shape=%s nnz=%d w=(%.3f,%.3f)",
-        sim.shape, sim.nnz, w_d, w_a,
+        "compute_composite_similarity: metric=%s shape=%s nnz=%d w=(%.3f,%.3f)",
+        metric, sim.shape, sim.nnz, w_d, w_a,
     )
     return sim
 

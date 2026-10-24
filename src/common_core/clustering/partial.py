@@ -1,6 +1,7 @@
 """Project partial iBGCs onto the primary clustering.
 
-For each partial we compute composite-Dice against every primary (a single
+For each partial we compute the composite similarity (Dice or weighted
+cosine, per ``metric``) against every primary (a single
 sparse vec @ M_primaries.T), take top-K, derive:
 
   * umap_x / umap_y — similarity-weighted mean of the top-K primaries' coords
@@ -42,11 +43,18 @@ def project_partials(
     weights: tuple[float, float] = (0.5, 0.5),
     knn_k: int = 5,
     min_total_similarity: float = 0.1,
+    metric: str = "dice",
+    domain_weights: "np.ndarray | None" = None,
+    pair_weights: "np.ndarray | None" = None,
 ) -> tuple[list[dict], int]:
     """Return ``(assignments, n_skipped)``.
 
     ``assignments`` is a list of dicts ready for the partial_assignments
     parquet: ibgc_id, leaf_path, umap_x, umap_y, novelty_score, domain_novelty.
+    ``metric`` / ``domain_weights`` / ``pair_weights`` are passed through to
+    :func:`~common_core.clustering.similarity.compute_composite_similarity`;
+    partials share the primaries' column vocabulary, so one pair of weight
+    vectors covers both.
     """
     import numpy as np
     import scipy.sparse as sp
@@ -79,11 +87,12 @@ def project_partials(
         leaf_col_sums[leaf] = np.asarray(M_dom_pri[rows].sum(axis=0)).reshape(-1)
 
     # One fat sparse matmul: stack primaries and partials, compute the joint
-    # composite-Dice, then slice out the partials-vs-primaries block.
+    # composite similarity, then slice out the partials-vs-primaries block.
     M_dom_full = sp.vstack([M_dom_pri, M_dom_q], format="csr")
     M_pair_full = sp.vstack([M_pair_pri, M_pair_q], format="csr")
     sim_full = compute_composite_similarity(
         M_dom_full, M_pair_full, weights=weights, prune_below=0.0,
+        metric=metric, domain_weights=domain_weights, pair_weights=pair_weights,
     )
     sim_block = sim_full[n_primary:, :n_primary].tocsr()
     M_dom_q_csr = M_dom_q.tocsr()

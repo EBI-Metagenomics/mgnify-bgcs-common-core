@@ -14,6 +14,11 @@ File layout (input):
     partials_ibgc_ids.npy         — int64, partial iBGC pks
     validated.npy                — int64, subset of ibgc_ids (validated iBGCs)
     params.json                  — RunParams as JSON
+    domain_weights.npy           — v2, float32 per domain_accs column
+                                   (only when similarity_metric needs weights)
+    pair_weights.npy             — v2, float32 per pair_vocab column (ditto)
+
+A v1 tarball (no ``schema_version`` in params.json) reads as composite Dice.
 
 File layout (output):
     clustering_run.json          — sha256, params, counts, library versions, device
@@ -25,6 +30,10 @@ File layout (output):
     scores.parquet               — ibgc_id, novelty_score, domain_novelty
     partial_assignments.parquet  — ibgc_id, leaf_path, umap_x, umap_y,
                                    novelty_score, domain_novelty
+    domain_weights.npy,          — v2, echoed from the input together with the
+    pair_weights.npy,              vocabularies they are aligned to, so the
+    domain_accs.npy,               portal can persist the run's exact weights
+    pair_vocab.npy                 (only when the input carried weights)
 """
 
 from __future__ import annotations
@@ -41,12 +50,15 @@ if TYPE_CHECKING:
     pass
 
 from common_core.clustering.schema import (
+    SCHEMA_VERSION,
     ClusteringInputs,
     ClusteringOutputs,
     RunParams,
 )
 
 log = logging.getLogger(__name__)
+
+_WEIGHT_FILES = ("domain_weights.npy", "pair_weights.npy")
 
 
 # ── Input read/write ─────────────────────────────────────────────────────────
@@ -77,6 +89,7 @@ def write_inputs_tarball(out_path: Path, inputs: ClusteringInputs) -> Path:
         )
         np.save(scratch / "validated.npy", np.asarray(inputs.validated_ibgc_ids, dtype=np.int64))
         (scratch / "params.json").write_text(json.dumps(_params_as_jsonable(inputs.params)))
+        weight_files = _save_weights(scratch, inputs)
 
         with tarfile.open(out_path, "w:gz") as tf:
             for name in (
@@ -90,6 +103,7 @@ def write_inputs_tarball(out_path: Path, inputs: ClusteringInputs) -> Path:
                 "partials_ibgc_ids.npy",
                 "validated.npy",
                 "params.json",
+                *weight_files,
             ):
                 tf.add(scratch / name, arcname=name)
     log.info("Wrote clustering input tarball: %s", out_path)
@@ -108,7 +122,8 @@ def read_inputs_tarball(path: Path) -> ClusteringInputs:
             tf.extractall(scratch)
 
         params = _params_from_jsonable(json.loads((scratch / "params.json").read_text()))
-        return ClusteringInputs(
+        domain_weights, pair_weights = _load_weights(scratch)
+        inputs = ClusteringInputs(
             M_domains=sp.load_npz(scratch / "M_domains.npz"),
             M_pairs=sp.load_npz(scratch / "M_pairs.npz"),
             domain_accs=np.load(scratch / "domain_accs.npy", allow_pickle=True),
@@ -119,7 +134,34 @@ def read_inputs_tarball(path: Path) -> ClusteringInputs:
             partials_ibgc_ids=np.load(scratch / "partials_ibgc_ids.npy"),
             validated_ibgc_ids=np.load(scratch / "validated.npy"),
             params=params,
+            domain_weights=domain_weights,
+            pair_weights=pair_weights,
         )
+    validate_inputs(inputs)
+    return inputs
+
+
+def validate_inputs(inputs: ClusteringInputs) -> None:
+    """Reject a tarball this version can't score faithfully.
+
+    Raises ``ValueError`` for a newer schema, an unknown metric, or weights
+    missing / misaligned for a weighted metric.
+    """
+    from common_core.clustering.similarity import check_metric
+
+    p = inputs.params
+    if p.schema_version > SCHEMA_VERSION:
+        raise ValueError(
+            f"input tarball schema v{p.schema_version} is newer than this "
+            f"common-core (v{SCHEMA_VERSION}); upgrade mgnify-bgcs-common-core"
+        )
+    check_metric(
+        p.similarity_metric,
+        inputs.M_domains,
+        inputs.M_pairs,
+        inputs.domain_weights,
+        inputs.pair_weights,
+    )
 
 
 # ── Output read/write ────────────────────────────────────────────────────────
@@ -223,6 +265,13 @@ def write_outputs_tarball(
             partial_cols = {key: [] for key in partial_keys}
         pq.write_table(pa.table(partial_cols), scratch / "partial_assignments.parquet")
 
+        # Weights + the vocabularies they're aligned to (v2, weighted metrics).
+        weight_files = _save_weights(scratch, inputs)
+        if weight_files:
+            np.save(scratch / "domain_accs.npy", np.asarray(inputs.domain_accs, dtype=object))
+            np.save(scratch / "pair_vocab.npy", np.asarray(inputs.pair_vocab, dtype=object))
+            weight_files += ["domain_accs.npy", "pair_vocab.npy"]
+
         members = [
             "clustering_run.json",
             "hierarchy.parquet",
@@ -230,6 +279,7 @@ def write_outputs_tarball(
             "coords.parquet",
             "scores.parquet",
             "partial_assignments.parquet",
+            *weight_files,
         ]
         with tarfile.open(out_path, "w:gz") as tf:
             for name in members:
@@ -243,8 +293,11 @@ def read_outputs_tarball(path: Path) -> dict:
     """Open a clustering-output tarball.
 
     Returns a dict with raw parquet tables and the clustering_run.json payload.
-    The Django importer turns these into DB writes.
+    The Django importer turns these into DB writes. ``domain_weights`` /
+    ``pair_weights`` / ``domain_accs`` / ``pair_vocab`` are ``None`` unless
+    the run used a weighted metric.
     """
+    import numpy as np
     import pyarrow.parquet as pq
 
     path = Path(path)
@@ -253,6 +306,11 @@ def read_outputs_tarball(path: Path) -> dict:
         with tarfile.open(path, "r:gz") as tf:
             tf.extractall(scratch)
         run = json.loads((scratch / "clustering_run.json").read_text())
+        domain_weights, pair_weights = _load_weights(scratch)
+        vocab: dict[str, object] = {}
+        for name in ("domain_accs", "pair_vocab"):
+            f = scratch / f"{name}.npy"
+            vocab[name] = np.load(f, allow_pickle=True) if f.exists() else None
         return {
             "run": run,
             "hierarchy": pq.read_table(scratch / "hierarchy.parquet").to_pydict(),
@@ -262,6 +320,9 @@ def read_outputs_tarball(path: Path) -> dict:
             "partial_assignments": pq.read_table(
                 scratch / "partial_assignments.parquet"
             ).to_pydict(),
+            "domain_weights": domain_weights,
+            "pair_weights": pair_weights,
+            **vocab,
         }
 
 
@@ -276,6 +337,8 @@ def _params_as_jsonable(p: RunParams) -> dict:
 
 
 def _params_from_jsonable(d: dict) -> RunParams:
+    # A v1 params.json has none of the v2 keys; the RunParams defaults for
+    # them are the v1 behaviour (Dice, prune 0.05, projection floor 0.1).
     return RunParams(
         domain_sources=list(d.get("domain_sources", [])),
         score_weights=tuple(d.get("score_weights", (0.5, 0.5))),
@@ -284,6 +347,33 @@ def _params_from_jsonable(d: dict) -> RunParams:
         seed=int(d.get("seed", 42)),
         run_tag=str(d.get("run_tag", "")),
         exporter_versions=dict(d.get("exporter_versions", {})),
+        similarity_metric=str(d.get("similarity_metric", "dice")),
+        domain_vocab=str(d.get("domain_vocab", "")),
+        enrichment_version=str(d.get("enrichment_version", "")),
+        prune_below=float(d.get("prune_below", 0.05)),
+        min_projection_similarity=float(d.get("min_projection_similarity", 0.1)),
+        schema_version=int(d.get("schema_version", 1)),
+    )
+
+
+def _save_weights(scratch: Path, inputs: ClusteringInputs) -> list[str]:
+    """Write whichever weight vectors are set; return the file names written."""
+    import numpy as np
+
+    written: list[str] = []
+    for name, w in zip(_WEIGHT_FILES, (inputs.domain_weights, inputs.pair_weights)):
+        if w is not None:
+            np.save(scratch / name, np.asarray(w, dtype=np.float32))
+            written.append(name)
+    return written
+
+
+def _load_weights(scratch: Path):
+    import numpy as np
+
+    return tuple(
+        np.load(scratch / name) if (scratch / name).exists() else None
+        for name in _WEIGHT_FILES
     )
 
 

@@ -1,4 +1,4 @@
-"""HPC-side BGC clustering: composite-Dice, KNN, hierarchical Leiden, UMAP.
+"""HPC-side BGC clustering: composite similarity, KNN, hierarchical Leiden, UMAP.
 
 The portal exports per-iBGC signature matrices and asks an HPC job to produce
 the hierarchy, coordinates, and novelty scores. The ``bgc-cluster`` CLI is

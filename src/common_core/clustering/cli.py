@@ -24,6 +24,7 @@ from common_core.clustering.io import read_inputs_tarball, write_outputs_tarball
 from common_core.clustering.knn import build_knn_graph
 from common_core.clustering.partial import project_partials
 from common_core.clustering.schema import ClusteringOutputs
+from common_core.clustering.weights import weights_sha256
 from common_core.clustering.scoring import (
     annotate_gcf_nodes,
     build_ltree_paths,
@@ -37,6 +38,8 @@ log = logging.getLogger("bgc-cluster")
 DEFAULT_RESOLUTIONS: tuple[float, ...] = (0.03, 0.08, 0.15, 0.25)
 DEFAULT_WEIGHTS: tuple[float, float] = (0.5, 0.5)
 KNN_K_FLOOR = 5
+# (prune_below, min_projection_similarity) hardcoded before schema v2.
+V1_THRESHOLDS: tuple[float, float] = (0.05, 0.1)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -86,6 +89,22 @@ def _cmd_run(args: argparse.Namespace) -> int:
     resolutions = tuple(args.resolutions or inputs.params.leiden_resolutions or DEFAULT_RESOLUTIONS)
     seed = args.seed if args.seed is not None else inputs.params.seed
     knn_k = args.knn_k if args.knn_k is not None else inputs.params.knn_k
+    # Similarity metric + thresholds come from params.json only (v1 → Dice,
+    # 0.05, 0.1); weights are already validated against the vocab on read.
+    metric = inputs.params.similarity_metric
+    prune_below = float(inputs.params.prune_below)
+    min_projection_similarity = float(inputs.params.min_projection_similarity)
+    feature_weights = {
+        "metric": metric,
+        "domain_weights": inputs.domain_weights,
+        "pair_weights": inputs.pair_weights,
+    }
+    log.info(
+        "similarity: metric=%s schema=v%d vocab=%s enrichment=%s prune_below=%.4f "
+        "min_projection_similarity=%.4f",
+        metric, inputs.params.schema_version, inputs.params.domain_vocab or "-",
+        inputs.params.enrichment_version or "-", prune_below, min_projection_similarity,
+    )
 
     n_primary = inputs.M_domains.shape[0]
     if n_primary == 0:
@@ -95,10 +114,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     effective_k = int(knn_k) if knn_k is not None and knn_k != "auto" else _auto_knn_k(n_primary)
     log.info("kNN k=%d (n_primary=%d, supplied=%s)", effective_k, n_primary, knn_k)
 
-    # 1. composite-Dice similarity
+    # 1. composite similarity (Dice or IDF × enrichment weighted cosine)
     sim = _compute_sim(
         inputs.M_domains, inputs.M_pairs, weights=weights,
-        device=device, matmul_workers=args.matmul_workers, prune_below=0.05,
+        device=device, matmul_workers=args.matmul_workers, prune_below=prune_below,
+        **feature_weights,
     )
 
     # 2. KNN graph (host)
@@ -125,11 +145,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     # 6. novelty + domain_novelty
     # Novelty is computed against a freshly-built, unpruned, diagonal-intact
-    # composite-Dice block (NOT the pruned/zeroed `sim` used for KNN/Leiden):
+    # composite block (NOT the pruned/zeroed `sim` used for KNN/Leiden):
     # a validated iBGC's self-match then yields novelty 0 by construction.
     validated_cols = _validated_cols(inputs.ibgc_ids, inputs.validated_ibgc_ids)
     novelty = compute_novelty_against_validated(
         inputs.M_domains, inputs.M_pairs, validated_cols, weights=weights,
+        **feature_weights,
     )
     domain_novelty = compute_domain_novelty_array(inputs.M_domains, leaf_paths)
 
@@ -148,6 +169,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         partial_ibgc_ids=inputs.partials_ibgc_ids,
         weights=weights,
         knn_k=effective_k,
+        min_total_similarity=min_projection_similarity,
+        **feature_weights,
     )
     log.info(
         "partials: projected=%d skipped=%d",
@@ -163,6 +186,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
         seed=seed,
         ibgc_etag=f"{len(inputs.ibgc_ids)}:{int(inputs.ibgc_ids[-1]) if len(inputs.ibgc_ids) else 0}",
         domain_etag=f"{inputs.M_domains.nnz}:{inputs.M_domains.shape[1]}",
+        metric=metric,
+        domain_vocab=inputs.params.domain_vocab,
+        enrichment_version=inputs.params.enrichment_version,
+        prune_below=prune_below,
+        min_projection_similarity=min_projection_similarity,
+        weights_sha=(
+            weights_sha256(inputs.domain_weights, inputs.pair_weights)
+            if inputs.domain_weights is not None
+            else ""
+        ),
     )
 
     n_root = sum(1 for n in gcf_nodes if n["level"] == 0)
@@ -251,6 +284,10 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
         partial_ibgc_ids=partials_ids,
         weights=weights,
         knn_k=knn_k,
+        min_total_similarity=float(inputs.params.min_projection_similarity),
+        metric=inputs.params.similarity_metric,
+        domain_weights=inputs.domain_weights,
+        pair_weights=inputs.pair_weights,
     )
 
     import pyarrow as pa
@@ -272,18 +309,23 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 
-def _compute_sim(M_dom, M_pair, *, weights, device: str, matmul_workers: int, prune_below: float):
+def _compute_sim(
+    M_dom, M_pair, *, weights, device: str, matmul_workers: int, prune_below: float,
+    metric: str = "dice", domain_weights=None, pair_weights=None,
+):
     if device == "gpu":
         from common_core.clustering.gpu.similarity import compute_composite_similarity_gpu
 
         return compute_composite_similarity_gpu(
             M_dom, M_pair, weights=weights, prune_below=prune_below,
+            metric=metric, domain_weights=domain_weights, pair_weights=pair_weights,
         )
     from common_core.clustering.similarity import compute_composite_similarity
 
     return compute_composite_similarity(
         M_dom, M_pair, weights=weights, prune_below=prune_below,
         matmul_workers=matmul_workers,
+        metric=metric, domain_weights=domain_weights, pair_weights=pair_weights,
     )
 
 
@@ -316,18 +358,40 @@ def _compute_run_sha(
     seed: int,
     ibgc_etag: str,
     domain_etag: str,
+    metric: str = "dice",
+    domain_vocab: str = "",
+    enrichment_version: str = "",
+    prune_below: float = 0.05,
+    min_projection_similarity: float = 0.1,
+    weights_sha: str = "",
 ) -> str:
-    payload = "|".join(
-        [
-            f"sources={','.join(sorted(sources))}",
-            f"weights={weights[0]:.6f},{weights[1]:.6f}",
-            f"k={knn_k}",
-            "res=" + ",".join(f"{r:.6f}" for r in leiden_resolutions),
-            f"seed={seed}",
-            f"ibgc_etag={ibgc_etag}",
-            f"domain_etag={domain_etag}",
+    """Stable, parameter-keyed run digest.
+
+    A Dice run with the v1 thresholds keeps the v1 payload byte-for-byte, so
+    re-running an existing Dice export reproduces its sha. Non-default
+    thresholds append ``prune`` / ``min_proj``; any other metric additionally
+    appends the metric, vocabulary, enrichment version and weight digest.
+    """
+    parts = [
+        f"sources={','.join(sorted(sources))}",
+        f"weights={weights[0]:.6f},{weights[1]:.6f}",
+        f"k={knn_k}",
+        "res=" + ",".join(f"{r:.6f}" for r in leiden_resolutions),
+        f"seed={seed}",
+        f"ibgc_etag={ibgc_etag}",
+        f"domain_etag={domain_etag}",
+    ]
+    is_dice = metric == "dice"
+    if not is_dice or (prune_below, min_projection_similarity) != V1_THRESHOLDS:
+        parts += [f"prune={prune_below:.6f}", f"min_proj={min_projection_similarity:.6f}"]
+    if not is_dice:
+        parts += [
+            f"metric={metric}",
+            f"vocab={domain_vocab}",
+            f"enrichment={enrichment_version}",
+            f"weights_sha={weights_sha}",
         ]
-    )
+    payload = "|".join(parts)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -356,7 +420,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pr.add_argument(
         "--weight", nargs=2, type=float, default=None,
         metavar=("W_DOMAIN", "W_ADJACENCY"),
-        help="Composite Dice weights (default 0.5 0.5)",
+        help="Composite weights for the domain / adjacency terms (default 0.5 0.5)",
     )
     pr.add_argument("--seed", type=int, default=None, help="Reproducibility seed")
     pr.add_argument(

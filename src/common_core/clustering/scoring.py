@@ -26,8 +26,15 @@ def compute_novelty_against_validated(
     validated_cols: list[int],
     *,
     weights: tuple[float, float] = (0.5, 0.5),
+    metric: str = "dice",
+    domain_weights: "np.ndarray | None" = None,
+    pair_weights: "np.ndarray | None" = None,
 ) -> "np.ndarray":
-    """Per-row ``1 − max(composite_dice_sim_to_validated)``.
+    """Per-row ``1 − max(composite_sim_to_validated)``.
+
+    ``metric`` / ``domain_weights`` / ``pair_weights`` select the per-family
+    similarity exactly as in
+    :func:`common_core.clustering.similarity.compute_composite_similarity`.
 
     Unlike :func:`compute_novelty_array`, this does **not** reuse the
     clustering similarity matrix. That matrix has its diagonal zeroed and is
@@ -41,17 +48,25 @@ def compute_novelty_against_validated(
       novelty of non-validated rows whose nearest validated neighbour sits
       just under the prune cutoff.
 
-    Here the composite Dice block (rows × validated-columns) is recomputed
-    unpruned and with the diagonal intact, so a validated iBGC's self-Dice of
-    1.0 yields novelty 0 *by construction*. Validated rows are additionally
-    clamped to 0.0 to cover the degenerate empty-signature case (self-Dice
-    undefined → 0). Returns all-NaN when there are no validated iBGCs.
+    Here the composite block (rows × validated-columns) is recomputed
+    unpruned and with the diagonal intact, so a validated iBGC's self-match
+    of 1.0 (Dice or cosine) yields novelty 0 *by construction*. Validated rows
+    are additionally clamped to 0.0 to cover the degenerate empty-signature
+    case (self-similarity undefined → 0). Returns all-NaN when there are no
+    validated iBGCs.
     """
     import numpy as np
+
+    from common_core.clustering.similarity import (
+        METRIC_DICE,
+        check_metric,
+        weighted_rows,
+    )
 
     n_rows = M_domains.shape[0]
     if not validated_cols:
         return np.full(n_rows, np.nan, dtype=np.float32)
+    check_metric(metric, M_domains, M_pairs, domain_weights, pair_weights)
 
     w_d, w_a = weights
     total = float(w_d) + float(w_a)
@@ -62,17 +77,24 @@ def compute_novelty_against_validated(
     val = np.asarray(sorted(validated_cols), dtype=np.int64)
 
     block: "np.ndarray | None" = None
-    for M, w in ((M_domains, w_d), (M_pairs, w_a)):
+    for M, w, w_feat in ((M_domains, w_d, domain_weights), (M_pairs, w_a, pair_weights)):
         if w <= 0:
             continue
-        Mf = M.astype(np.float32)
-        sizes = np.asarray(Mf.sum(axis=1), dtype=np.float32).ravel()
-        # rows × |validated| intersection counts (validated set is small).
-        inter = np.asarray((Mf @ Mf[val].T).todense(), dtype=np.float32)
-        denom = sizes[:, None] + sizes[val][None, :]
-        with np.errstate(divide="ignore", invalid="ignore"):
-            dice = np.where(denom > 0.0, 2.0 * inter / denom, 0.0).astype(np.float32)
-        block = w * dice if block is None else block + w * dice
+        if metric == METRIC_DICE:
+            Mf = M.astype(np.float32)
+            sizes = np.asarray(Mf.sum(axis=1), dtype=np.float32).ravel()
+            # rows × |validated| intersection counts (validated set is small).
+            inter = np.asarray((Mf @ Mf[val].T).todense(), dtype=np.float32)
+            denom = sizes[:, None] + sizes[val][None, :]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                fam = np.where(denom > 0.0, 2.0 * inter / denom, 0.0).astype(np.float32)
+        else:
+            # Weighted cosine: unit-norm weighted rows, dot product is the score.
+            X = weighted_rows(M, w_feat)
+            fam = np.minimum(
+                np.asarray((X @ X[val].T).todense(), dtype=np.float32), 1.0,
+            )
+        block = w * fam if block is None else block + w * fam
 
     max_sim = block.max(axis=1)
     novelty = (1.0 - max_sim).astype(np.float32)

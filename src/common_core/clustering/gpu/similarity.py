@@ -1,10 +1,14 @@
-"""GPU composite-Dice via cuSPARSE.
+"""GPU composite similarity via cuSPARSE.
 
-Mirrors :mod:`common_core.clustering.similarity` numerics exactly; only the
-matmul backend changes. The Dice formula is computed on the device and the
-result returned as a SciPy CSR for downstream use (KNN top-k, Leiden,
-partial projection). UMAP on GPU takes its KNN from this same matrix, also
-on device.
+Mirrors :mod:`common_core.clustering.similarity` numerics exactly (both the
+``"dice"`` and ``"cosine_idf_enrich"`` metrics); only the matmul backend
+changes. The per-pair formula is computed on the device and the result
+returned as a SciPy CSR for downstream use (KNN top-k, Leiden, partial
+projection). UMAP on GPU takes its KNN from this same matrix, also on device.
+
+For the weighted cosine the row-normalised ``X = rownorm(M · diag(w))`` is
+built on the host (one O(nnz) pass) and only ``X_block @ X.T`` runs on the
+device, so the row-block chunking below is shared by both metrics.
 """
 
 from __future__ import annotations
@@ -75,6 +79,9 @@ def compute_composite_similarity_gpu(
     weights: tuple[float, float] = (0.5, 0.5),
     prune_below: float = 0.05,
     block: int = 4096,
+    metric: str = "dice",
+    domain_weights=None,
+    pair_weights=None,
 ) -> "sp.csr_matrix":
     """GPU composite similarity, fused per row-block.
 
@@ -90,10 +97,17 @@ def compute_composite_similarity_gpu(
     import cupyx.scipy.sparse as cusp
     import scipy.sparse as sp
 
+    from common_core.clustering.similarity import (
+        METRIC_DICE,
+        check_metric,
+        weighted_rows,
+    )
+
     if M_domains.shape[0] != M_pairs.shape[0]:
         raise ValueError(
             f"row mismatch: M_domains={M_domains.shape}, M_pairs={M_pairs.shape}"
         )
+    check_metric(metric, M_domains, M_pairs, domain_weights, pair_weights)
     n = M_domains.shape[0]
     w_d, w_a = weights
     total = float(w_d) + float(w_a)
@@ -101,12 +115,19 @@ def compute_composite_similarity_gpu(
         raise ValueError(f"weights must sum > 0, got {weights}")
     w_d, w_a = w_d / total, w_a / total
 
-    Mfd = cusp.csr_matrix(M_domains.astype("float32")) if w_d > 0 else None
-    Mfa = cusp.csr_matrix(M_pairs.astype("float32")) if w_a > 0 else None
-    MfdT = Mfd.T.tocsr() if Mfd is not None else None
-    MfaT = Mfa.T.tocsr() if Mfa is not None else None
-    sizes_d = Mfd.sum(axis=1).ravel().astype(cp.float32) if Mfd is not None else None
-    sizes_a = Mfa.sum(axis=1).ravel().astype(cp.float32) if Mfa is not None else None
+    is_dice = metric == METRIC_DICE
+
+    def _to_device(M, w_feat):
+        # Dice: binary rows + row sizes for the denominator.
+        # Cosine: pre-normalised weighted rows; no denominator (sizes=None).
+        if is_dice:
+            Mf = cusp.csr_matrix(M.astype("float32"))
+            return Mf, Mf.T.tocsr(), Mf.sum(axis=1).ravel().astype(cp.float32)
+        Xf = cusp.csr_matrix(weighted_rows(M, w_feat))
+        return Xf, Xf.T.tocsr(), None
+
+    Mfd, MfdT, sizes_d = _to_device(M_domains, domain_weights) if w_d > 0 else (None, None, None)
+    Mfa, MfaT, sizes_a = _to_device(M_pairs, pair_weights) if w_a > 0 else (None, None, None)
 
     rows_chunks: list = []
     cols_chunks: list = []
@@ -119,12 +140,16 @@ def compute_composite_similarity_gpu(
         nnz = int(inter.nnz)
         if nnz == 0:
             return None, 0
-        rr = inter.row + start
-        cc = inter.col
-        denom = sizes[rr] + sizes[cc]
-        safe = denom > 0
-        vals = cp.zeros(nnz, dtype=cp.float32)
-        vals[safe] = weight * (2.0 * inter.data[safe] / denom[safe])
+        if sizes is None:
+            # Weighted cosine: rows are unit-norm, the dot product is the score.
+            vals = weight * cp.minimum(inter.data, 1.0).astype(cp.float32)
+        else:
+            rr = inter.row + start
+            cc = inter.col
+            denom = sizes[rr] + sizes[cc]
+            safe = denom > 0
+            vals = cp.zeros(nnz, dtype=cp.float32)
+            vals[safe] = weight * (2.0 * inter.data[safe] / denom[safe])
         return (
             cusp.csr_matrix(
                 (vals, (inter.row, inter.col)),
@@ -164,9 +189,9 @@ def compute_composite_similarity_gpu(
         total_kept += n_keep
 
     log.info(
-        "compute_composite_similarity_gpu: shape=(%d, %d) inter_nnz=%d kept(>=%.3f)=%d "
-        "w=(%.3f,%.3f) block=%d",
-        n, n, total_inter, prune_below, total_kept, w_d, w_a, block,
+        "compute_composite_similarity_gpu: metric=%s shape=(%d, %d) inter_nnz=%d "
+        "kept(>=%.3f)=%d w=(%.3f,%.3f) block=%d",
+        metric, n, n, total_inter, prune_below, total_kept, w_d, w_a, block,
     )
 
     if not rows_chunks:
