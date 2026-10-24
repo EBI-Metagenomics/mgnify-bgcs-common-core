@@ -223,6 +223,19 @@ def test_enrichment_shrinks_unseen_to_half_and_floors():
     assert abs(e[2] - 0.5) < 0.05
 
 
+def test_enrichment_from_counts_matches_matrix_form():
+    rng = np.random.default_rng(3)
+    core = scipy_sparse.csr_matrix((rng.random((50, 12)) > 0.7).astype(np.uint8))
+    flank = scipy_sparse.csr_matrix((rng.random((140, 12)) > 0.85).astype(np.uint8))
+    got = W.enrichment_from_counts(
+        np.asarray(core.sum(axis=0)).ravel(),
+        np.asarray(flank.sum(axis=0)).ravel(),
+        50,
+        140,
+    )
+    np.testing.assert_array_equal(got, W.enrichment_weights(core, flank))
+
+
 def test_pair_enrichment_is_geometric_mean_with_unknown_fallback():
     accs = np.array(["IPR1", "IPR2", "IPR3"], dtype=object)
     e = np.array([0.9, 0.4, 0.1], dtype=np.float32)

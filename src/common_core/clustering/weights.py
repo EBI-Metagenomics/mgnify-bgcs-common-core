@@ -71,9 +71,30 @@ def enrichment_weights(
     """
     import numpy as np
 
-    c = np.asarray((M_core > 0).sum(axis=0)).ravel().astype(np.float64)
-    f = np.asarray((M_flank > 0).sum(axis=0)).ravel().astype(np.float64)
-    n_c, n_f = float(M_core.shape[0]), float(M_flank.shape[0])
+    c = np.asarray((M_core > 0).sum(axis=0)).ravel()
+    f = np.asarray((M_flank > 0).sum(axis=0)).ravel()
+    return enrichment_from_counts(c, f, M_core.shape[0], M_flank.shape[0], pseudo)
+
+
+def enrichment_from_counts(
+    c,
+    f,
+    n_core: int,
+    n_flank: int,
+    pseudo: float = ENRICH_PSEUDOCOUNT,
+) -> np.ndarray:
+    """:func:`enrichment_weights` from per-label CDS counts.
+
+    ``c`` / ``f`` are the number of core / flank CDS carrying each label;
+    ``n_core`` / ``n_flank`` count *all* core / flank CDS, including those
+    with no label. Lets callers aggregate in SQL instead of materialising
+    CDS × label matrices.
+    """
+    import numpy as np
+
+    c = np.asarray(c, dtype=np.float64)
+    f = np.asarray(f, dtype=np.float64)
+    n_c, n_f = float(n_core), float(n_flank)
     a_c, a_f = pseudo * n_c / (n_c + n_f), pseudo * n_f / (n_c + n_f)
     p_c = (c + a_c) / (n_c + pseudo)
     p_f = (f + a_f) / (n_f + pseudo)
