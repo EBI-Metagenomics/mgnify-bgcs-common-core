@@ -269,6 +269,20 @@ def test_combine_and_hash():
     assert h != W.weights_sha256(idf, np.array([0.5, 0.26], dtype=np.float32))
 
 
+def test_combine_idf_exponent():
+    idf = np.array([0.5, 1.0, 4.0], dtype=np.float32)
+    enr = np.array([0.5, 0.25, 1.0], dtype=np.float32)
+    # p = 1 is the benchmark reference, bit for bit.
+    np.testing.assert_array_equal(W.combine(idf, enr, idf_exponent=1.0), idf * enr)
+    np.testing.assert_allclose(
+        W.combine(idf, enr, idf_exponent=W.COSINE_IDF_EXPONENT), np.sqrt(idf) * enr, rtol=1e-6
+    )
+    assert W.combine(idf, enr, idf_exponent=0.5).dtype == np.float32
+    for bad in (0.0, -1.0):
+        with pytest.raises(ValueError, match="idf_exponent"):
+            W.combine(idf, enr, idf_exponent=bad)
+
+
 # ── Parity with the experiment's reference implementation ───────────────────
 
 
@@ -507,5 +521,34 @@ def test_cosine_run_sha_keys_metric_vocab_enrichment_and_weights():
         ("weights_sha", "abd"),
         ("prune_below", 0.1),
         ("min_projection_similarity", 0.2),
+        ("idf_exponent", 0.5),
     ):
         assert _compute_run_sha(**dict(cos, **{key: value})) != base, key
+
+
+def test_idf_exponent_one_keeps_the_pre_amendment_sha():
+    cos = dict(
+        _SHA_BASE, metric=COSINE, domain_vocab="IPR_GAPFILLED", enrichment_version="v1", weights_sha="abc"
+    )
+    assert _compute_run_sha(**cos, idf_exponent=1.0) == _compute_run_sha(**cos)
+    # Dice ignores it entirely.
+    assert _compute_run_sha(**_SHA_BASE, idf_exponent=0.5) == _compute_run_sha(**_SHA_BASE)
+
+
+def test_layout_random_init_is_finite_and_normalised():
+    pytest.importorskip("umap")
+    import igraph as ig
+
+    from common_core.clustering.knn import build_knn_graph
+    from common_core.clustering.layout import compute_2d_layout
+
+    M_dom, M_pair, w_dom, w_pair = _fixture(n=80)
+    sim = compute_composite_similarity(
+        M_dom, M_pair, prune_below=0.0, metric=COSINE, domain_weights=w_dom, pair_weights=w_pair
+    )
+    graph = build_knn_graph(sim, k=5)
+    assert isinstance(graph, ig.Graph)
+    coords = compute_2d_layout(graph, sim, seed=1, init="random")
+    assert coords.shape == (80, 2) and np.isfinite(coords).all()
+    assert np.abs(coords).max() <= 10.0 + 1e-9
+    np.testing.assert_array_equal(coords, compute_2d_layout(graph, sim, seed=1, init="random"))

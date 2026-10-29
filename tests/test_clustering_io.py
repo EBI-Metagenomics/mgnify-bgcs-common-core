@@ -134,6 +134,7 @@ def test_v1_tarball_reads_as_dice(tmp_path):
     assert p.similarity_metric == "dice"
     assert (p.prune_below, p.min_projection_similarity) == (0.05, 0.1)
     assert p.domain_vocab == "" and p.enrichment_version == ""
+    assert p.idf_exponent == 1.0
     assert inputs.domain_weights is None and inputs.pair_weights is None
 
 
@@ -149,6 +150,25 @@ def test_v2_round_trip(tmp_path):
     assert got.domain_weights.dtype == np.float32
     assert (got.M_domains != src.M_domains).nnz == 0
     assert list(got.pair_vocab) == list(src.pair_vocab)
+
+
+def test_idf_exponent_round_trips_and_defaults_to_one(tmp_path):
+    src = _inputs(_v2_params(idf_exponent=0.5), with_weights=True)
+    got = read_inputs_tarball(write_inputs_tarball(tmp_path / "p05.tar.gz", src))
+    assert got.params.idf_exponent == 0.5
+
+    # A v2 params.json written before the key existed reads as 1.0.
+    path = write_inputs_tarball(tmp_path / "old.tar.gz", _inputs(_v2_params(), with_weights=True))
+    scratch = tmp_path / "old"
+    with tarfile.open(path, "r:gz") as tf:
+        tf.extractall(scratch)
+    params = json.loads((scratch / "params.json").read_text())
+    params.pop("idf_exponent")
+    (scratch / "params.json").write_text(json.dumps(params))
+    with tarfile.open(path, "w:gz") as tf:
+        for f in sorted(scratch.iterdir()):
+            tf.add(f, arcname=f.name)
+    assert read_inputs_tarball(path).params.idf_exponent == 1.0
 
 
 def test_v2_dice_tarball_has_no_weight_files(tmp_path):
@@ -259,3 +279,21 @@ def test_cli_v2_cosine_run_echoes_weights(tmp_path):
 
     # Partials are projected (planted families → every partial has neighbours).
     assert len(out["partial_assignments"]["ibgc_id"]) == src.partials_ibgc_ids.size
+
+
+@pytest.mark.parametrize("metric, init", [("dice", "spectral"), (COSINE, "random")])
+def test_cli_layout_init_follows_metric(tmp_path, monkeypatch, metric, init):
+    """Cosine runs skip UMAP's spectral init; Dice keeps it so coords reproduce."""
+    from common_core.clustering import layout
+
+    seen = {}
+    real = layout.compute_2d_layout
+
+    def spy(graph, sim, **kw):
+        seen.update(kw)
+        return real(graph, sim, **kw)
+
+    monkeypatch.setattr(layout, "compute_2d_layout", spy)
+    src = _inputs(_v2_params(similarity_metric=metric), with_weights=metric != "dice")
+    _run_cli(write_inputs_tarball(tmp_path / "in.tar.gz", src), tmp_path / "out.tar.gz")
+    assert seen["init"] == init

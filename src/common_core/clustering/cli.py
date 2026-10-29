@@ -100,10 +100,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         "pair_weights": inputs.pair_weights,
     }
     log.info(
-        "similarity: metric=%s schema=v%d vocab=%s enrichment=%s prune_below=%.4f "
+        "similarity: metric=%s schema=v%d vocab=%s enrichment=%s idf_exponent=%g prune_below=%.4f "
         "min_projection_similarity=%.4f",
         metric, inputs.params.schema_version, inputs.params.domain_vocab or "-",
-        inputs.params.enrichment_version or "-", prune_below, min_projection_similarity,
+        inputs.params.enrichment_version or "-", inputs.params.idf_exponent,
+        prune_below, min_projection_similarity,
     )
 
     n_primary = inputs.M_domains.shape[0]
@@ -141,7 +142,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         from common_core.clustering.gpu.layout import compute_2d_layout_gpu as _layout
     else:
         from common_core.clustering.layout import compute_2d_layout as _layout
-    coords = _layout(graph, sim, seed=seed)
+    # CPU: skip the spectral init that always fails at portal scale, except
+    # for Dice so its coordinates reproduce (see layout.py).
+    layout_kw = {} if device == "gpu" else {"init": "spectral" if metric == "dice" else "random"}
+    coords = _layout(graph, sim, seed=seed, **layout_kw)
 
     # 6. novelty + domain_novelty
     # Novelty is computed against a freshly-built, unpruned, diagonal-intact
@@ -189,6 +193,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         metric=metric,
         domain_vocab=inputs.params.domain_vocab,
         enrichment_version=inputs.params.enrichment_version,
+        idf_exponent=inputs.params.idf_exponent,
         prune_below=prune_below,
         min_projection_similarity=min_projection_similarity,
         weights_sha=(
@@ -361,6 +366,7 @@ def _compute_run_sha(
     metric: str = "dice",
     domain_vocab: str = "",
     enrichment_version: str = "",
+    idf_exponent: float = 1.0,
     prune_below: float = 0.05,
     min_projection_similarity: float = 0.1,
     weights_sha: str = "",
@@ -370,7 +376,8 @@ def _compute_run_sha(
     A Dice run with the v1 thresholds keeps the v1 payload byte-for-byte, so
     re-running an existing Dice export reproduces its sha. Non-default
     thresholds append ``prune`` / ``min_proj``; any other metric additionally
-    appends the metric, vocabulary, enrichment version and weight digest.
+    appends the metric, vocabulary, enrichment version and weight digest, plus
+    ``idf_exp`` when it isn't 1 (so pre-amendment cosine runs keep their sha).
     """
     parts = [
         f"sources={','.join(sorted(sources))}",
@@ -391,6 +398,8 @@ def _compute_run_sha(
             f"enrichment={enrichment_version}",
             f"weights_sha={weights_sha}",
         ]
+        if idf_exponent != 1.0:
+            parts.append(f"idf_exp={idf_exponent:.6f}")
     payload = "|".join(parts)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 

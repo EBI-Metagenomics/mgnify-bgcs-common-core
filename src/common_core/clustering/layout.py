@@ -6,6 +6,12 @@ where the overhead would dominate.
 
 Coordinates are normalized to ``[-10, 10]`` on both axes so the dashboard
 scatter plot scales stay stable across re-runs.
+
+``init="spectral"`` (UMAP's default) fails on the full portal corpus — the
+kNN graph has too small an eigengap — and UMAP falls back to a random
+initialisation anyway, after minutes (Dice) to hours (weighted cosine) in the
+eigensolver. ``init="random"`` skips that; Dice runs keep ``"spectral"`` so
+their coordinates reproduce.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ def compute_2d_layout(
     *,
     seed: int = 42,
     n_neighbors: int | None = None,
+    init: str = "spectral",
 ) -> "np.ndarray":
     """Return a normalized ``(n_rows, 2)`` array.
 
@@ -44,7 +51,7 @@ def compute_2d_layout(
 
     coords: np.ndarray | None = None
     if n >= _UMAP_MIN_VERTICES:
-        coords = _umap_layout(sim, seed=seed, n_neighbors=n_neighbors)
+        coords = _umap_layout(sim, seed=seed, n_neighbors=n_neighbors, init=init)
     if coords is None:
         coords = _igraph_layout(graph)
 
@@ -56,6 +63,7 @@ def _umap_layout(
     *,
     seed: int,
     n_neighbors: int | None,
+    init: str = "spectral",
 ) -> "np.ndarray | None":
     try:
         import numpy as np
@@ -102,6 +110,7 @@ def _umap_layout(
             random_state=seed,
             n_neighbors=k,
             precomputed_knn=(knn_idx, knn_dist, None),
+            init=init,
         )
         coords = reducer.fit_transform(
             np.zeros((n, 1), dtype=np.float32),

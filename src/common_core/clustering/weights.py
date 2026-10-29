@@ -5,7 +5,7 @@ Ported from the 2026-10-23 similarity benchmark
 ``bgcsim.features``); see ADR 0003. Numerics must stay identical to that
 reference — the benchmark numbers in the ADR were produced with it.
 
-    w_f        = idf_f × enrich_f
+    w_f        = idf_f ** p × enrich_f
     idf_f      = ln((1 + N) / (1 + df_f)), df counted once per group
                  (species, i.e. ``taxonomy_path``) so over-sampled clades
                  don't make their own domains look common
@@ -16,6 +16,11 @@ reference — the benchmark numbers in the ADR were produced with it.
 IDF is recomputed per clustering run; the enrichment table is a frozen,
 versioned artefact built by the portal. Labels missing from the table
 weigh ``UNKNOWN_ENRICH`` (0.5, i.e. ``e = 0``).
+
+``p`` (the run's ``idf_exponent``) is 1 in the benchmark reference. The
+ADR 0003 amendment (Phase 4 go / no-go on the full portal corpus) sets
+``COSINE_IDF_EXPONENT = 0.5`` with ``COSINE_SCORE_WEIGHTS = (0.6, 0.4)``:
+full IDF let rare tailoring domains split same-compound MIBiG families.
 """
 
 from __future__ import annotations
@@ -32,6 +37,9 @@ if TYPE_CHECKING:
 ENRICH_FLOOR = 0.05
 ENRICH_PSEUDOCOUNT = 2.0
 UNKNOWN_ENRICH = 0.5
+# Recommended cosine_idf_enrich run settings (ADR 0003 amendment).
+COSINE_IDF_EXPONENT = 0.5
+COSINE_SCORE_WEIGHTS: tuple[float, float] = (0.6, 0.4)
 
 
 def idf_weights(M: sp.csr_matrix, groups) -> np.ndarray:
@@ -143,14 +151,21 @@ def pair_enrichment(
     return w
 
 
-def combine(idf: np.ndarray, enrich: np.ndarray) -> np.ndarray:
-    """Feature weight ``idf × enrich`` (float32, same length as both inputs)."""
+def combine(idf: np.ndarray, enrich: np.ndarray, *, idf_exponent: float = 1.0) -> np.ndarray:
+    """Feature weight ``idf ** idf_exponent × enrich`` (float32, same length as both inputs).
+
+    ``idf_exponent=1`` is the benchmark reference, bit for bit.
+    """
     import numpy as np
 
     idf = np.asarray(idf, dtype=np.float32)
     enrich = np.asarray(enrich, dtype=np.float32)
     if idf.shape != enrich.shape:
         raise ValueError(f"idf {idf.shape} and enrich {enrich.shape} differ")
+    if idf_exponent <= 0:
+        raise ValueError(f"idf_exponent must be > 0, got {idf_exponent}")
+    if idf_exponent != 1.0:
+        idf = np.power(idf, np.float32(idf_exponent))
     return idf * enrich
 
 

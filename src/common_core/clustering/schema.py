@@ -9,6 +9,9 @@ Schema versions:
       (``domain_weights.npy`` / ``pair_weights.npy``) and the prune /
       projection thresholds. A v1 tarball reads as ``similarity_metric="dice"``
       with the v1 thresholds, so older runs reproduce unchanged.
+      ``idf_exponent`` (ADR 0003 amendment) is a later, optional v2 key; it
+      reads as 1.0 when absent. The weight vectors already carry it, so it is
+      provenance (and part of the run sha), not an input to the similarity.
 """
 
 from __future__ import annotations
@@ -40,6 +43,7 @@ class RunParams:
     enrichment_version: str = ""  # DomainEnrichment table version; "" for dice
     prune_below: float = 0.05  # similarity-graph edge prune before KNN
     min_projection_similarity: float = 0.1  # partials: min summed top-k similarity
+    idf_exponent: float = 1.0  # w = idf ** idf_exponent × enrich; 1.0 for dice
     schema_version: int = SCHEMA_VERSION
 
 

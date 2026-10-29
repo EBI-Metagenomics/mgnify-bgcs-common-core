@@ -352,6 +352,7 @@ def _params_from_jsonable(d: dict) -> RunParams:
         enrichment_version=str(d.get("enrichment_version", "")),
         prune_below=float(d.get("prune_below", 0.05)),
         min_projection_similarity=float(d.get("min_projection_similarity", 0.1)),
+        idf_exponent=float(d.get("idf_exponent", 1.0)),
         schema_version=int(d.get("schema_version", 1)),
     )
 
