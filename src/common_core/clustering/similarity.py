@@ -24,6 +24,8 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import numpy as np
     import scipy.sparse as sp
 
@@ -206,6 +208,111 @@ def compute_composite_similarity(
         metric, sim.shape, sim.nnz, w_d, w_a,
     )
     return sim
+
+
+def iter_cross_similarity(
+    Q_domains: "sp.csr_matrix",
+    Q_pairs: "sp.csr_matrix",
+    P_domains: "sp.csr_matrix",
+    P_pairs: "sp.csr_matrix",
+    *,
+    weights: tuple[float, float] = (0.5, 0.5),
+    metric: str = METRIC_DICE,
+    domain_weights: "np.ndarray | None" = None,
+    pair_weights: "np.ndarray | None" = None,
+    chunk_rows: int = 2048,
+) -> "Iterator[tuple[int, sp.csr_matrix]]":
+    """Yield ``(start, block)`` row chunks of the query × reference composite.
+
+    ``block`` is ``composite(Q[start:start+len], P)`` as float32 CSR with
+    sorted indices: unpruned, no diagonal handling, not symmetrised. Each
+    entry equals the matching entry of :func:`compute_composite_similarity`
+    on ``vstack([P, Q])`` with ``prune_below=0`` — per-row Dice sizes and
+    cosine row norms don't depend on the other rows, and the matmul sums
+    shared columns in the same order — but the reference × reference and
+    query × query blocks are never built, and only ``chunk_rows`` query rows
+    are in memory at a time.
+    """
+    if Q_domains.shape[0] != Q_pairs.shape[0] or P_domains.shape[0] != P_pairs.shape[0]:
+        raise ValueError(
+            f"row mismatch: Q={Q_domains.shape}/{Q_pairs.shape}, "
+            f"P={P_domains.shape}/{P_pairs.shape}"
+        )
+    if Q_domains.shape[1] != P_domains.shape[1] or Q_pairs.shape[1] != P_pairs.shape[1]:
+        raise ValueError("query and reference matrices must share their vocabularies")
+    check_metric(metric, P_domains, P_pairs, domain_weights, pair_weights)
+    if chunk_rows < 1:
+        raise ValueError(f"chunk_rows must be ≥ 1, got {chunk_rows}")
+
+    w_d, w_a = weights
+    total = float(w_d) + float(w_a)
+    if total <= 0:
+        raise ValueError(f"weights must sum > 0, got {weights}")
+    w_d, w_a = w_d / total, w_a / total
+
+    families = []
+    if w_d > 0:
+        families.append((w_d, _CrossFamily(Q_domains, P_domains, domain_weights, metric)))
+    if w_a > 0:
+        families.append((w_a, _CrossFamily(Q_pairs, P_pairs, pair_weights, metric)))
+
+    n_q = Q_domains.shape[0]
+    for start in range(0, n_q, chunk_rows):
+        end = min(n_q, start + chunk_rows)
+        block = None
+        for w, fam in families:
+            part = w * fam.block(start, end)
+            block = part if block is None else block + part
+        block = block.tocsr()
+        block.eliminate_zeros()
+        block.sort_indices()
+        yield start, block
+
+
+class _CrossFamily:
+    """One feature family's query × reference similarity, built per row chunk.
+
+    The reference side (``P.T`` and, for Dice, its row sizes) is prepared
+    once; the query side is weighted/normalised once and sliced per chunk.
+    """
+
+    def __init__(self, Q, P, w, metric: str) -> None:
+        import numpy as np
+
+        self.metric = metric
+        if metric == METRIC_DICE:
+            self.Q = Q.astype(np.float32).tocsr()
+            P_f = P.astype(np.float32).tocsr()
+            self.q_sizes = np.asarray(Q.sum(axis=1), dtype=np.float32).ravel()
+            self.p_sizes = np.asarray(P.sum(axis=1), dtype=np.float32).ravel()
+        else:
+            self.Q = weighted_rows(Q, w)
+            P_f = weighted_rows(P, w)
+        self.PT = P_f.T.tocsr()
+
+    def block(self, start: int, end: int) -> "sp.csr_matrix":
+        import numpy as np
+        import scipy.sparse as sp
+
+        prod = self.Q[start:end] @ self.PT
+        if self.metric != METRIC_DICE:
+            prod = prod.astype(np.float32).tocsr()
+            np.minimum(prod.data, 1.0, out=prod.data)
+            prod.eliminate_zeros()
+            return prod
+
+        inter = prod.tocoo(copy=False)
+        if inter.nnz == 0:
+            return sp.csr_matrix(inter.shape, dtype=np.float32)
+        denom = self.q_sizes[start:end][inter.row] + self.p_sizes[inter.col]
+        safe = denom > 0
+        values = np.zeros_like(inter.data, dtype=np.float32)
+        values[safe] = 2.0 * inter.data[safe] / denom[safe]
+        sim = sp.csr_matrix(
+            (values, (inter.row, inter.col)), shape=inter.shape, dtype=np.float32,
+        )
+        sim.eliminate_zeros()
+        return sim
 
 
 def _zero_diagonal(sim: "sp.csr_matrix") -> None:

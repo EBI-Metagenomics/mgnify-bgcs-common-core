@@ -12,6 +12,9 @@ Locks:
 3. **Dice is untouched.** ``metric="dice"`` (the default) still returns the
    exact Dice values, and the run sha of a Dice run is the v1 payload.
 4. Novelty and partial projection honour the metric.
+5. Partial projection's chunked partials × primaries block equals the
+   matching block of the stacked composite exactly, so moving off the
+   stacked matmul changes no similarity value.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from common_core.clustering.scoring import (
 )
 from common_core.clustering.similarity import (
     compute_composite_similarity,
+    iter_cross_similarity,
     weighted_cosine_similarity,
 )
 
@@ -410,6 +414,54 @@ def test_partial_projection_uses_metric_and_threshold():
         pair_weights=np.ones(1, dtype=np.float32),
     )
     assert skipped == [] and n_skipped == 1
+
+
+@pytest.mark.parametrize("metric", ["dice", COSINE])
+@pytest.mark.parametrize("chunk_rows", [1, 7, 2048])
+def test_cross_similarity_equals_stacked_composite_block(metric, chunk_rows):
+    M_dom, M_pair, w_dom, w_pair = _fixture(seed=3)
+    n_pri = 40
+    kw = {"weights": (0.6, 0.4), "metric": metric}
+    if metric == COSINE:
+        kw |= {"domain_weights": w_dom, "pair_weights": w_pair}
+    stacked = compute_composite_similarity(M_dom, M_pair, prune_below=0.0, **kw)
+    expected = stacked[n_pri:, :n_pri].toarray()
+
+    blocks = list(iter_cross_similarity(
+        M_dom[n_pri:], M_pair[n_pri:], M_dom[:n_pri], M_pair[:n_pri],
+        chunk_rows=chunk_rows, **kw,
+    ))
+    assert [s for s, _ in blocks] == list(range(0, M_dom.shape[0] - n_pri, chunk_rows))
+    got = scipy_sparse.vstack([b for _, b in blocks]).toarray()
+    assert got.dtype == np.float32
+    np.testing.assert_array_equal(got, expected)  # bit-identical, not approx
+
+
+def test_partial_projection_does_not_depend_on_chunk_rows():
+    M_dom, M_pair, w_dom, w_pair = _fixture(seed=5, n=80)
+    n_pri = 50
+    rng = np.random.default_rng(5)
+    common = {
+        "M_dom_pri": M_dom[:n_pri],
+        "M_pair_pri": M_pair[:n_pri],
+        "pri_ibgc_ids": np.arange(n_pri),
+        "pri_coords": rng.random((n_pri, 2)),
+        "pri_leaf_paths": [f"{i % 4}.{i % 7}" for i in range(n_pri)],
+        "pri_validated_rows": [1, 9, 20],
+        "M_dom_q": M_dom[n_pri:],
+        "M_pair_q": M_pair[n_pri:],
+        "partial_ibgc_ids": np.arange(100, 100 + M_dom.shape[0] - n_pri),
+        "weights": (0.6, 0.4),
+        "knn_k": 5,
+        "min_total_similarity": 0.1,
+        "metric": COSINE,
+        "domain_weights": w_dom,
+        "pair_weights": w_pair,
+    }
+    ref = project_partials(**common, chunk_rows=2048)
+    assert ref[0]  # something was projected
+    for chunk_rows in (1, 4, 29):
+        assert project_partials(**common, chunk_rows=chunk_rows) == ref
 
 
 # ── Run sha ─────────────────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 """Project partial iBGCs onto the primary clustering.
 
 For each partial we compute the composite similarity (Dice or weighted
-cosine, per ``metric``) against every primary (a single
-sparse vec @ M_primaries.T), take top-K, derive:
+cosine, per ``metric``) against every primary — only the partials ×
+primaries block, in row chunks — take top-K, derive:
 
   * umap_x / umap_y — similarity-weighted mean of the top-K primaries' coords
   * leaf_path — weighted-majority vote of the top-K primaries' leaf paths
@@ -46,6 +46,7 @@ def project_partials(
     metric: str = "dice",
     domain_weights: "np.ndarray | None" = None,
     pair_weights: "np.ndarray | None" = None,
+    chunk_rows: int = 2048,
 ) -> tuple[list[dict], int]:
     """Return ``(assignments, n_skipped)``.
 
@@ -54,12 +55,12 @@ def project_partials(
     ``metric`` / ``domain_weights`` / ``pair_weights`` are passed through to
     :func:`~common_core.clustering.similarity.compute_composite_similarity`;
     partials share the primaries' column vocabulary, so one pair of weight
-    vectors covers both.
+    vectors covers both. ``chunk_rows`` partials are scored at a time
+    (memory only; results don't depend on it).
     """
     import numpy as np
-    import scipy.sparse as sp
 
-    from common_core.clustering.similarity import compute_composite_similarity
+    from common_core.clustering.similarity import iter_cross_similarity
 
     n_primary = M_dom_pri.shape[0]
     n_partial = M_dom_q.shape[0]
@@ -86,22 +87,28 @@ def project_partials(
     for leaf, rows in leaf_to_rows.items():
         leaf_col_sums[leaf] = np.asarray(M_dom_pri[rows].sum(axis=0)).reshape(-1)
 
-    # One fat sparse matmul: stack primaries and partials, compute the joint
-    # composite similarity, then slice out the partials-vs-primaries block.
-    M_dom_full = sp.vstack([M_dom_pri, M_dom_q], format="csr")
-    M_pair_full = sp.vstack([M_pair_pri, M_pair_q], format="csr")
-    sim_full = compute_composite_similarity(
-        M_dom_full, M_pair_full, weights=weights, prune_below=0.0,
-        metric=metric, domain_weights=domain_weights, pair_weights=pair_weights,
+    # Only the partials × primaries block, a chunk of partial rows at a time.
+    # Stacking primaries and partials into one composite (as before) built
+    # the primaries × primaries and partials × partials blocks too, unpruned:
+    # ~30e9 entries and 2–11 h at portal scale.
+    blocks = iter_cross_similarity(
+        M_dom_q.tocsr(), M_pair_q.tocsr(), M_dom_pri.tocsr(), M_pair_pri.tocsr(),
+        weights=weights, metric=metric,
+        domain_weights=domain_weights, pair_weights=pair_weights,
+        chunk_rows=chunk_rows,
     )
-    sim_block = sim_full[n_primary:, :n_primary].tocsr()
     M_dom_q_csr = M_dom_q.tocsr()
 
     assignments: list[dict] = []
     skipped = 0
+    block_start, sim_block, block_end = 0, None, 0
     for q_row in range(n_partial):
-        sp_start = sim_block.indptr[q_row]
-        sp_end = sim_block.indptr[q_row + 1]
+        if q_row >= block_end:
+            block_start, sim_block = next(blocks)
+            block_end = block_start + sim_block.shape[0]
+        b_row = q_row - block_start
+        sp_start = sim_block.indptr[b_row]
+        sp_end = sim_block.indptr[b_row + 1]
         if sp_start == sp_end:
             skipped += 1
             continue
