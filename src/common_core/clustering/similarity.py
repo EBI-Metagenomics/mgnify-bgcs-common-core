@@ -198,7 +198,7 @@ def compute_composite_similarity(
                 shape=coo.shape,
             )
 
-    sim.setdiag(0)
+    _zero_diagonal(sim)
     sim.eliminate_zeros()
     sim = sim.maximum(sim.T).tocsr()
     log.info(
@@ -206,6 +206,19 @@ def compute_composite_similarity(
         metric, sim.shape, sim.nnz, w_d, w_a,
     )
     return sim
+
+
+def _zero_diagonal(sim: "sp.csr_matrix") -> None:
+    """Zero stored diagonal entries in place.
+
+    ``csr_matrix.setdiag(0)`` is a no-op on scipy 1.14 (the portal's pin) when
+    some diagonal entries are absent from the structure, which is the usual
+    case here (empty signatures have no self-match).
+    """
+    import numpy as np
+
+    rows = np.repeat(np.arange(sim.shape[0], dtype=sim.indices.dtype), np.diff(sim.indptr))
+    sim.data[sim.indices == rows] = 0
 
 
 def _matmul_chunked(Mf: "sp.csr_matrix", workers: int) -> "sp.csr_matrix":
