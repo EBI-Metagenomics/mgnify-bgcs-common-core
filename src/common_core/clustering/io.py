@@ -26,14 +26,17 @@ File layout (output):
     gcf_nodes.parquet            — family_path, parent_path, level,
                                    member_count, descendant_count,
                                    representative_ibgc_id
-    coords.parquet               — ibgc_id, umap_x, umap_y
     scores.parquet               — ibgc_id, novelty_score, domain_novelty
-    partial_assignments.parquet  — ibgc_id, leaf_path, umap_x, umap_y,
-                                   novelty_score, domain_novelty
+    partial_assignments.parquet  — ibgc_id, leaf_path, novelty_score,
+                                   domain_novelty
     domain_weights.npy,          — v2, echoed from the input together with the
     pair_weights.npy,              vocabularies they are aligned to, so the
     domain_accs.npy,               portal can persist the run's exact weights
     pair_vocab.npy                 (only when the input carried weights)
+
+Schema v3 dropped the UMAP layout. v1/v2 output tarballs still read: their
+``coords.parquet`` and the ``umap_x`` / ``umap_y`` partial columns are
+ignored, so the result has the same shape for every schema version.
 """
 
 from __future__ import annotations
@@ -50,6 +53,9 @@ if TYPE_CHECKING:
     pass
 
 from common_core.clustering.schema import (
+    LEGACY_OUTPUT_MEMBERS,
+    LEGACY_PARTIAL_COLUMNS,
+    PARTIAL_ASSIGNMENT_COLUMNS,
     SCHEMA_VERSION,
     ClusteringInputs,
     ClusteringOutputs,
@@ -192,8 +198,6 @@ def write_outputs_tarball(
             "n_leaf_communities": outputs.n_leaf_communities,
             "library_versions": outputs.library_versions,
             "device": outputs.device,
-            "cuda_version": outputs.cuda_version,
-            "gpu_model": outputs.gpu_model,
             "params": _params_as_jsonable(inputs.params),
         }
         (scratch / "clustering_run.json").write_text(json.dumps(run_json, indent=2))
@@ -220,19 +224,6 @@ def write_outputs_tarball(
         gcf_cols = {key: [node[key] for node in outputs.gcf_nodes] for key in gcf_keys}
         pq.write_table(pa.table(gcf_cols), scratch / "gcf_nodes.parquet")
 
-        # coords.parquet — UMAP layout
-        coords = np.asarray(outputs.coords, dtype=np.float64)
-        pq.write_table(
-            pa.table(
-                {
-                    "ibgc_id": [int(x) for x in inputs.ibgc_ids.tolist()],
-                    "umap_x": coords[:, 0].tolist() if coords.size else [],
-                    "umap_y": coords[:, 1].tolist() if coords.size else [],
-                }
-            ),
-            scratch / "coords.parquet",
-        )
-
         # scores.parquet — novelty + domain_novelty; NaN → null in parquet
         nv = np.asarray(outputs.novelty_score, dtype=np.float64)
         dn = np.asarray(outputs.domain_novelty, dtype=np.float64)
@@ -248,14 +239,7 @@ def write_outputs_tarball(
         pq.write_table(scores_table, scratch / "scores.parquet")
 
         # partial_assignments.parquet — variable length
-        partial_keys = [
-            "ibgc_id",
-            "leaf_path",
-            "umap_x",
-            "umap_y",
-            "novelty_score",
-            "domain_novelty",
-        ]
+        partial_keys = list(PARTIAL_ASSIGNMENT_COLUMNS)
         if outputs.partial_assignments:
             partial_cols = {
                 key: [row.get(key) for row in outputs.partial_assignments]
@@ -276,7 +260,6 @@ def write_outputs_tarball(
             "clustering_run.json",
             "hierarchy.parquet",
             "gcf_nodes.parquet",
-            "coords.parquet",
             "scores.parquet",
             "partial_assignments.parquet",
             *weight_files,
@@ -296,6 +279,9 @@ def read_outputs_tarball(path: Path) -> dict:
     The Django importer turns these into DB writes. ``domain_weights`` /
     ``pair_weights`` / ``domain_accs`` / ``pair_vocab`` are ``None`` unless
     the run used a weighted metric.
+
+    Accepts v1/v2 tarballs too: a legacy ``coords.parquet`` is never read and
+    legacy ``umap_x`` / ``umap_y`` partial columns are dropped.
     """
     import numpy as np
     import pyarrow.parquet as pq
@@ -304,7 +290,10 @@ def read_outputs_tarball(path: Path) -> dict:
     with tempfile.TemporaryDirectory() as scratch:
         scratch = Path(scratch)
         with tarfile.open(path, "r:gz") as tf:
-            tf.extractall(scratch)
+            tf.extractall(
+                scratch,
+                members=[m for m in tf.getmembers() if m.name not in LEGACY_OUTPUT_MEMBERS],
+            )
         run = json.loads((scratch / "clustering_run.json").read_text())
         domain_weights, pair_weights = _load_weights(scratch)
         vocab: dict[str, object] = {}
@@ -315,11 +304,8 @@ def read_outputs_tarball(path: Path) -> dict:
             "run": run,
             "hierarchy": pq.read_table(scratch / "hierarchy.parquet").to_pydict(),
             "gcf_nodes": pq.read_table(scratch / "gcf_nodes.parquet").to_pydict(),
-            "coords": pq.read_table(scratch / "coords.parquet").to_pydict(),
             "scores": pq.read_table(scratch / "scores.parquet").to_pydict(),
-            "partial_assignments": pq.read_table(
-                scratch / "partial_assignments.parquet"
-            ).to_pydict(),
+            "partial_assignments": _read_partials(scratch / "partial_assignments.parquet"),
             "domain_weights": domain_weights,
             "pair_weights": pair_weights,
             **vocab,
@@ -327,6 +313,15 @@ def read_outputs_tarball(path: Path) -> dict:
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
+
+
+def _read_partials(path: Path) -> dict:
+    """Read partial_assignments.parquet without the legacy layout columns."""
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(path)
+    keep = [c for c in table.column_names if c not in LEGACY_PARTIAL_COLUMNS]
+    return table.select(keep).to_pydict()
 
 
 def _params_as_jsonable(p: RunParams) -> dict:

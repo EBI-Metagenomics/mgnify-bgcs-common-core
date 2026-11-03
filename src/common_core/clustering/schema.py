@@ -12,6 +12,10 @@ Schema versions:
       ``idf_exponent`` (ADR 0003 amendment) is a later, optional v2 key; it
       reads as 1.0 when absent. The weight vectors already carry it, so it is
       provenance (and part of the run sha), not an input to the similarity.
+  3 — drops the 2D layout: no ``coords.parquet`` and no ``umap_x`` /
+      ``umap_y`` in ``partial_assignments.parquet``; the run JSON no longer
+      carries GPU fields. Inputs are unchanged from v2. v1/v2 *output*
+      tarballs still read: their coordinates are ignored.
 """
 
 from __future__ import annotations
@@ -23,7 +27,19 @@ if TYPE_CHECKING:
     import numpy as np
     import scipy.sparse as sp
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# Columns of partial_assignments.parquet (v3). v1/v2 tarballs also carry
+# umap_x / umap_y, which readers drop.
+PARTIAL_ASSIGNMENT_COLUMNS: tuple[str, ...] = (
+    "ibgc_id",
+    "leaf_path",
+    "novelty_score",
+    "domain_novelty",
+)
+# Output-tarball members written by schema <= 2 and ignored on read.
+LEGACY_OUTPUT_MEMBERS: tuple[str, ...] = ("coords.parquet",)
+LEGACY_PARTIAL_COLUMNS: tuple[str, ...] = ("umap_x", "umap_y")
 
 
 @dataclass
@@ -82,8 +98,6 @@ class ClusteringOutputs:
     leaf_paths: list[str]
     # Per-level integer labels: levels[d][v] is the label for vertex v at depth d.
     levels: list[list[int]]
-    # (n_ibgcs, 2) float64; aligned to ibgc_ids; normalised to [-10, 10].
-    coords: "np.ndarray"
     # Per-row novelty_score / domain_novelty; NaN means "leave NULL in DB".
     novelty_score: "np.ndarray"
     domain_novelty: "np.ndarray"
@@ -99,6 +113,4 @@ class ClusteringOutputs:
     n_root_communities: int
     n_leaf_communities: int
     library_versions: dict[str, str]
-    device: str
-    cuda_version: str = ""
-    gpu_model: str = ""
+    device: str = "cpu"

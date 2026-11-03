@@ -4,7 +4,6 @@ For each partial we compute the composite similarity (Dice or weighted
 cosine, per ``metric``) against every primary — only the partials ×
 primaries block, in row chunks — take top-K, derive:
 
-  * umap_x / umap_y — similarity-weighted mean of the top-K primaries' coords
   * leaf_path — weighted-majority vote of the top-K primaries' leaf paths
   * novelty_score — 1 − max(sim_to_validated_primary); forced to 0 when the
     partial is itself validated (it matches itself, so it is not novel)
@@ -33,7 +32,6 @@ def project_partials(
     M_dom_pri: "sp.csr_matrix",
     M_pair_pri: "sp.csr_matrix",
     pri_ibgc_ids,
-    pri_coords: "np.ndarray",
     pri_leaf_paths: list[str],
     pri_validated_rows: list[int],
     M_dom_q: "sp.csr_matrix",
@@ -51,7 +49,7 @@ def project_partials(
     """Return ``(assignments, n_skipped)``.
 
     ``assignments`` is a list of dicts ready for the partial_assignments
-    parquet: ibgc_id, leaf_path, umap_x, umap_y, novelty_score, domain_novelty.
+    parquet: ibgc_id, leaf_path, novelty_score, domain_novelty.
     ``metric`` / ``domain_weights`` / ``pair_weights`` are passed through to
     :func:`~common_core.clustering.similarity.compute_composite_similarity`;
     partials share the primaries' column vocabulary, so one pair of weight
@@ -122,10 +120,6 @@ def project_partials(
             skipped += 1
             continue
 
-        weights_norm = top_vals / top_sum
-        umap_x = float((pri_coords[top_cols, 0] * weights_norm).sum())
-        umap_y = float((pri_coords[top_cols, 1] * weights_norm).sum())
-
         votes: Counter[str] = Counter()
         for col, val in zip(top_cols.tolist(), top_vals.tolist()):
             p = pri_leaf_paths[col]
@@ -165,8 +159,6 @@ def project_partials(
             {
                 "ibgc_id": int(partial_ibgc_ids_arr[q_row]),
                 "leaf_path": best_leaf,
-                "umap_x": umap_x,
-                "umap_y": umap_y,
                 "novelty_score": novelty,
                 "domain_novelty": domain_novelty,
             }

@@ -1,4 +1,4 @@
-"""Input / output tarball contract tests (schema v1 + v2).
+"""Input / output tarball contract tests (schema v1, v2, v3).
 
 Locks:
 
@@ -9,6 +9,11 @@ Locks:
    thresholds and both weight vectors; the output echoes the weights with
    their vocabularies.
 3. Tarballs a given common-core can't score faithfully are rejected on read.
+4. **v3** output has no 2D layout (no ``coords.parquet``, no ``umap_*``
+   partial columns), and a frozen **v2** output tarball — written by
+   common-core ``dev`` before the layout was removed — still reads, with its
+   layout silently ignored. That fixture must never be regenerated with
+   newer code.
 """
 
 from __future__ import annotations
@@ -29,10 +34,25 @@ from common_core.clustering.io import (
     write_inputs_tarball,
 )
 from common_core.clustering.schema import (
+    PARTIAL_ASSIGNMENT_COLUMNS,
     SCHEMA_VERSION,
     ClusteringInputs,
     RunParams,
 )
+
+FIXTURES = Path(__file__).parent / "fixtures" / "clustering"
+V2_OUTPUT_FIXTURE = FIXTURES / "output_v2_cosine.tar.gz"
+OUTPUT_KEYS = {
+    "run",
+    "hierarchy",
+    "gcf_nodes",
+    "scores",
+    "partial_assignments",
+    "domain_weights",
+    "pair_weights",
+    "domain_accs",
+    "pair_vocab",
+}
 
 COSINE = "cosine_idf_enrich"
 V1_PARAMS = {
@@ -144,7 +164,7 @@ def test_v2_round_trip(tmp_path):
     got = read_inputs_tarball(path)
 
     assert got.params == src.params
-    assert got.params.schema_version == SCHEMA_VERSION == 2
+    assert got.params.schema_version == SCHEMA_VERSION == 3
     np.testing.assert_array_equal(got.domain_weights, src.domain_weights)
     np.testing.assert_array_equal(got.pair_weights, src.pair_weights)
     assert got.domain_weights.dtype == np.float32
@@ -281,19 +301,119 @@ def test_cli_v2_cosine_run_echoes_weights(tmp_path):
     assert len(out["partial_assignments"]["ibgc_id"]) == src.partials_ibgc_ids.size
 
 
-@pytest.mark.parametrize("metric, init", [("dice", "spectral"), (COSINE, "random")])
-def test_cli_layout_init_follows_metric(tmp_path, monkeypatch, metric, init):
-    """Cosine runs skip UMAP's spectral init; Dice keeps it so coords reproduce."""
-    from common_core.clustering import layout
+# ── Schema v3 output: no 2D layout ──────────────────────────────────────────
 
-    seen = {}
-    real = layout.compute_2d_layout
 
-    def spy(graph, sim, **kw):
-        seen.update(kw)
-        return real(graph, sim, **kw)
+def test_cli_v3_output_has_no_layout(tmp_path):
+    src = _inputs(_v2_params(), with_weights=True)
+    inp = write_inputs_tarball(tmp_path / "in.tar.gz", src)
+    out_path = tmp_path / "out.tar.gz"
+    out = _run_cli(inp, out_path)
 
-    monkeypatch.setattr(layout, "compute_2d_layout", spy)
-    src = _inputs(_v2_params(similarity_metric=metric), with_weights=metric != "dice")
-    _run_cli(write_inputs_tarball(tmp_path / "in.tar.gz", src), tmp_path / "out.tar.gz")
-    assert seen["init"] == init
+    with tarfile.open(out_path, "r:gz") as tf:
+        members = set(tf.getnames())
+    assert "coords.parquet" not in members
+    assert set(out) == OUTPUT_KEYS
+    assert tuple(out["partial_assignments"]) == PARTIAL_ASSIGNMENT_COLUMNS
+    assert len(out["partial_assignments"]["ibgc_id"]) == src.partials_ibgc_ids.size
+    run = out["run"]
+    assert run["params"]["schema_version"] == SCHEMA_VERSION == 3
+    assert run["device"] == "cpu"
+    assert not {"cuda_version", "gpu_model"} & set(run)
+    assert "umap-learn" not in run["library_versions"]
+
+
+def test_cli_v2_input_tarball_still_runs(tmp_path):
+    """Inputs are unchanged in v3, so a v2 input tarball clusters as before."""
+    src = _inputs(_v2_params(schema_version=2), with_weights=True)
+    inp = write_inputs_tarball(tmp_path / "in_v2.tar.gz", src)
+    assert read_inputs_tarball(inp).params.schema_version == 2
+    out = _run_cli(inp, tmp_path / "out.tar.gz")
+    assert set(out) == OUTPUT_KEYS
+    assert len(out["hierarchy"]["ibgc_id"]) == src.ibgc_ids.size
+
+
+def test_cli_rejects_gpu_device(tmp_path):
+    from common_core.clustering.cli import main
+
+    with pytest.raises(SystemExit):
+        main(["run", "--device", "gpu", "--input", "x", "--output", "y"])
+
+
+# ── Backward compatibility: frozen v2 output tarball ────────────────────────
+
+
+def _raw_parquet(tarball: Path, member: str) -> dict:
+    import io
+
+    import pyarrow.parquet as pq
+
+    with tarfile.open(tarball, "r:gz") as tf:
+        return pq.read_table(io.BytesIO(tf.extractfile(member).read())).to_pydict()
+
+
+def test_v2_output_fixture_carries_the_legacy_layout():
+    """Guard: the fixture really is a pre-v3 tarball with coords + umap_*."""
+    with tarfile.open(V2_OUTPUT_FIXTURE, "r:gz") as tf:
+        assert "coords.parquet" in tf.getnames()
+        run = json.loads(tf.extractfile("clustering_run.json").read())
+    assert run["params"]["schema_version"] == 2
+    assert {"umap_x", "umap_y"} <= set(_raw_parquet(V2_OUTPUT_FIXTURE, "partial_assignments.parquet"))
+    assert set(_raw_parquet(V2_OUTPUT_FIXTURE, "coords.parquet")) == {"ibgc_id", "umap_x", "umap_y"}
+
+
+def test_v2_output_tarball_reads_with_layout_ignored():
+    out = read_outputs_tarball(V2_OUTPUT_FIXTURE)
+
+    # Same shape as a v3 read: no coords, no umap_* partial columns.
+    assert set(out) == OUTPUT_KEYS
+    assert tuple(out["partial_assignments"]) == PARTIAL_ASSIGNMENT_COLUMNS
+
+    # Everything that isn't layout survives unchanged.
+    raw_partials = _raw_parquet(V2_OUTPUT_FIXTURE, "partial_assignments.parquet")
+    for col in PARTIAL_ASSIGNMENT_COLUMNS:
+        assert out["partial_assignments"][col] == raw_partials[col]
+    assert len(out["partial_assignments"]["ibgc_id"]) == 4
+    for key, member in (
+        ("hierarchy", "hierarchy.parquet"),
+        ("gcf_nodes", "gcf_nodes.parquet"),
+        ("scores", "scores.parquet"),
+    ):
+        assert out[key] == _raw_parquet(V2_OUTPUT_FIXTURE, member)
+    assert len(out["hierarchy"]["ibgc_id"]) == 24
+    assert out["run"]["params"]["similarity_metric"] == COSINE
+    assert out["domain_weights"] is not None and out["domain_weights"].shape == (20,)
+    assert out["pair_vocab"] is not None and len(out["pair_vocab"]) == 30
+
+
+def test_project_partials_ignores_legacy_coords(tmp_path):
+    """``project-partials`` still accepts a primary_meta.json carrying coords."""
+    pytest.importorskip("igraph")
+    from common_core.clustering.cli import main
+
+    src = _inputs(_v2_params(), with_weights=True)
+    inp = write_inputs_tarball(tmp_path / "in.tar.gz", src)
+    n = src.ibgc_ids.size
+    scratch = tmp_path / "partials"
+    scratch.mkdir()
+    meta = {
+        "score_weights": [0.5, 0.5],
+        "knn_k": 5,
+        "leaf_paths": [f"{i % 3}.0" for i in range(n)],
+        "coords": [[float(i), float(-i)] for i in range(n)],
+    }
+    (scratch / "primary_meta.json").write_text(json.dumps(meta))
+    scipy_sparse.save_npz(scratch / "partials_M_domains.npz", src.partials_M_domains)
+    scipy_sparse.save_npz(scratch / "partials_M_pairs.npz", src.partials_M_pairs)
+    np.save(scratch / "partials_ibgc_ids.npy", src.partials_ibgc_ids)
+    partials_tgz = tmp_path / "partials.tar.gz"
+    with tarfile.open(partials_tgz, "w:gz") as tf:
+        for f in scratch.iterdir():
+            tf.add(f, arcname=f.name)
+
+    out = tmp_path / "assign.tar.gz"
+    assert main(["project-partials", "--input", str(inp), "--partials", str(partials_tgz),
+                 "--output", str(out)]) == 0
+    got = _raw_parquet(out, "partial_assignments.parquet")
+    assert tuple(got) == PARTIAL_ASSIGNMENT_COLUMNS
+    assert len(got["ibgc_id"]) == src.partials_ibgc_ids.size

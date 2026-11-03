@@ -5,7 +5,7 @@ Biopython's ``SeqIO.write(..., "genbank")`` wraps quoted qualifier values at
 On re-read Biopython joins continuation lines for non-``translation``
 qualifiers by inserting a space, corrupting single-token identifiers like
 ``/locus_tag`` and ``/protein_id``. Downstream consumers (InterProScan
-matching, CHAMOIS, our own metadata collector) then miss the join and drop
+matching, our own metadata collector) then miss the join and drop
 or corrupt rows.
 
 The identifier qualifiers written by our pipeline never contain legitimate

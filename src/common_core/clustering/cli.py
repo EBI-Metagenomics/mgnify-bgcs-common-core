@@ -6,8 +6,7 @@ Subcommands:
                     re-projecting partials against an existing primary run)
 
 Defaults match the portal's in-process pipeline so HPC and dev runs are
-comparable. Numerics are identical on the CPU path; the GPU path has
-documented drift (UMAP is stochastic; cuml ≠ umap-learn bit-for-bit).
+comparable. CPU only; no 2D layout is computed (output schema v3).
 """
 
 from __future__ import annotations
@@ -22,8 +21,9 @@ from pathlib import Path
 
 from common_core.clustering.io import read_inputs_tarball, write_outputs_tarball
 from common_core.clustering.knn import build_knn_graph
+from common_core.clustering.leiden import run_hierarchical_leiden
 from common_core.clustering.partial import project_partials
-from common_core.clustering.schema import ClusteringOutputs
+from common_core.clustering.schema import PARTIAL_ASSIGNMENT_COLUMNS, ClusteringOutputs
 from common_core.clustering.weights import weights_sha256
 from common_core.clustering.scoring import (
     annotate_gcf_nodes,
@@ -62,19 +62,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    device = args.device
-    log.info("bgc-cluster run --device %s --input %s --output %s",
-             device, args.input, args.output)
-
-    diag = {"device": device, "cuda_version": "", "gpu_model": "",
-            "library_versions": {}}
-    if device == "gpu":
-        # Fail-fast import fence — no silent CPU fallback.
-        from common_core.clustering.gpu import ensure_gpu_available
-
-        diag.update(ensure_gpu_available())
-        log.info("GPU detected: %s (cuda=%s, libs=%s)",
-                 diag["gpu_model"], diag["cuda_version"], diag["library_versions"])
+    log.info("bgc-cluster run --input %s --output %s", args.input, args.output)
 
     inputs = read_inputs_tarball(Path(args.input))
     log.info(
@@ -118,7 +106,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     # 1. composite similarity (Dice or IDF × enrichment weighted cosine)
     sim = _compute_sim(
         inputs.M_domains, inputs.M_pairs, weights=weights,
-        device=device, matmul_workers=args.matmul_workers, prune_below=prune_below,
+        matmul_workers=args.matmul_workers, prune_below=prune_below,
         **feature_weights,
     )
 
@@ -126,28 +114,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     graph = build_knn_graph(sim, k=effective_k)
 
     # 3. hierarchical Leiden
-    if device == "gpu":
-        from common_core.clustering.gpu.leiden import run_hierarchical_leiden_gpu as _hl
-    else:
-        from common_core.clustering.leiden import run_hierarchical_leiden as _hl
-    levels = _hl(graph, resolutions=resolutions, seed=seed)
+    levels = run_hierarchical_leiden(graph, resolutions=resolutions, seed=seed)
 
     # 4. ltree paths + GCF tree
     leaf_paths_map, gcf_nodes = build_ltree_paths(levels, inputs.ibgc_ids)
     leaf_paths = [leaf_paths_map[int(x)] for x in inputs.ibgc_ids.tolist()]
     annotate_gcf_nodes(gcf_nodes, sim, inputs.ibgc_ids)
 
-    # 5. 2D layout
-    if device == "gpu":
-        from common_core.clustering.gpu.layout import compute_2d_layout_gpu as _layout
-    else:
-        from common_core.clustering.layout import compute_2d_layout as _layout
-    # CPU: skip the spectral init that always fails at portal scale, except
-    # for Dice so its coordinates reproduce (see layout.py).
-    layout_kw = {} if device == "gpu" else {"init": "spectral" if metric == "dice" else "random"}
-    coords = _layout(graph, sim, seed=seed, **layout_kw)
-
-    # 6. novelty + domain_novelty
+    # 5. novelty + domain_novelty
     # Novelty is computed against a freshly-built, unpruned, diagonal-intact
     # composite block (NOT the pruned/zeroed `sim` used for KNN/Leiden):
     # a validated iBGC's self-match then yields novelty 0 by construction.
@@ -158,13 +132,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
     domain_novelty = compute_domain_novelty_array(inputs.M_domains, leaf_paths)
 
-    # 7. partial-iBGC projection (bundled here so the portal never has to run it)
-    primary_coords = coords
+    # 6. partial-iBGC projection (bundled here so the portal never has to run it)
     partial_assignments, n_skipped = project_partials(
         M_dom_pri=inputs.M_domains,
         M_pair_pri=inputs.M_pairs,
         pri_ibgc_ids=inputs.ibgc_ids,
-        pri_coords=primary_coords,
         pri_leaf_paths=leaf_paths,
         pri_validated_rows=validated_cols,
         validated_ibgc_ids=inputs.validated_ibgc_ids,
@@ -181,7 +153,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         len(partial_assignments), n_skipped,
     )
 
-    # 8. sha256 — stable, parameter-keyed
+    # 7. sha256 — stable, parameter-keyed
     sha = _compute_run_sha(
         sources=tuple(inputs.params.domain_sources),
         weights=weights,
@@ -205,21 +177,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     n_root = sum(1 for n in gcf_nodes if n["level"] == 0)
     n_leaf = sum(1 for n in gcf_nodes if n["level"] == len(resolutions) - 1)
-    libs = diag["library_versions"] or {}
-    libs.update(
-        {
-            "igraph": _safe_version("igraph"),
-            "leidenalg": _safe_version("leidenalg"),
-            "umap-learn": _safe_version("umap-learn"),
-            "scipy": _safe_version("scipy"),
-            "numpy": _safe_version("numpy"),
-        }
-    )
+    libs = {
+        "igraph": _safe_version("igraph"),
+        "leidenalg": _safe_version("leidenalg"),
+        "scipy": _safe_version("scipy"),
+        "numpy": _safe_version("numpy"),
+    }
 
     outputs = ClusteringOutputs(
         leaf_paths=leaf_paths,
         levels=levels,
-        coords=coords,
         novelty_score=novelty,
         domain_novelty=domain_novelty,
         gcf_nodes=gcf_nodes,
@@ -228,9 +195,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
         n_root_communities=n_root,
         n_leaf_communities=n_leaf,
         library_versions=libs,
-        device=device,
-        cuda_version=diag["cuda_version"],
-        gpu_model=diag["gpu_model"],
     )
     write_outputs_tarball(Path(args.output), inputs, outputs)
     log.info("Done. sha256=%s n_root=%d n_leaf=%d", sha[:12], n_root, n_leaf)
@@ -246,7 +210,8 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
     Reads:
       --input         input tarball used by the primary run (for M_*_pri + ibgc_ids)
       --partials      tarball with partial signature matrices + ibgc_ids and
-                      the primary run's leaf_paths and coords (parquet)
+                      the primary run's leaf_paths (``primary_meta.json``;
+                      a legacy ``coords`` key there is ignored)
       --output        tarball with partial_assignments only
 
     This is a niche path; the standard ``run`` already projects partials.
@@ -273,14 +238,12 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
     weights = tuple(meta.get("score_weights") or DEFAULT_WEIGHTS)
     knn_k = int(meta.get("knn_k") or _auto_knn_k(inputs.M_domains.shape[0]))
     leaf_paths = list(meta.get("leaf_paths") or [])
-    coords = np.asarray(meta.get("coords") or [[0.0, 0.0]] * inputs.M_domains.shape[0])
     validated_cols = _validated_cols(inputs.ibgc_ids, inputs.validated_ibgc_ids)
 
     assignments, _ = project_partials(
         M_dom_pri=inputs.M_domains,
         M_pair_pri=inputs.M_pairs,
         pri_ibgc_ids=inputs.ibgc_ids,
-        pri_coords=coords,
         pri_leaf_paths=leaf_paths,
         pri_validated_rows=validated_cols,
         validated_ibgc_ids=inputs.validated_ibgc_ids,
@@ -300,7 +263,7 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    keys = ["ibgc_id", "leaf_path", "umap_x", "umap_y", "novelty_score", "domain_novelty"]
+    keys = list(PARTIAL_ASSIGNMENT_COLUMNS)
     cols = {k: [row.get(k) for row in assignments] for k in keys}
     with tempfile.TemporaryDirectory() as scratch:
         scratch = Path(scratch)
@@ -315,16 +278,9 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
 
 
 def _compute_sim(
-    M_dom, M_pair, *, weights, device: str, matmul_workers: int, prune_below: float,
+    M_dom, M_pair, *, weights, matmul_workers: int, prune_below: float,
     metric: str = "dice", domain_weights=None, pair_weights=None,
 ):
-    if device == "gpu":
-        from common_core.clustering.gpu.similarity import compute_composite_similarity_gpu
-
-        return compute_composite_similarity_gpu(
-            M_dom, M_pair, weights=weights, prune_below=prune_below,
-            metric=metric, domain_weights=domain_weights, pair_weights=pair_weights,
-        )
     from common_core.clustering.similarity import compute_composite_similarity
 
     return compute_composite_similarity(
@@ -410,7 +366,7 @@ def _compute_run_sha(
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="bgc-cluster",
-        description="HPC clustering for BGC discovery (CPU + optional GPU).",
+        description="HPC clustering for BGC discovery (CPU).",
     )
     sub = p.add_subparsers(dest="command")
 
@@ -418,8 +374,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--input", required=True, help="path to input tarball")
     pr.add_argument("--output", required=True, help="path to write output tarball")
     pr.add_argument(
-        "--device", choices=["cpu", "gpu"], default="cpu",
-        help="cpu (default) or gpu (RAPIDS — requires the hpc-gpu extras and a CUDA node)",
+        "--device", choices=["cpu"], default="cpu",
+        help="Kept so existing job scripts still parse; CPU is the only device.",
     )
     pr.add_argument("--knn-k", default=None, help="KNN k; default 'auto' = max(5, ceil(ln(n)))")
     pr.add_argument(
@@ -444,7 +400,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pp.add_argument("--input", required=True)
     pp.add_argument("--partials", required=True)
     pp.add_argument("--output", required=True)
-    pp.add_argument("--device", choices=["cpu", "gpu"], default="cpu")
+    pp.add_argument("--device", choices=["cpu"], default="cpu")
 
     return p
 

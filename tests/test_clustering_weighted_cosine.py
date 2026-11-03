@@ -394,7 +394,6 @@ def test_partial_projection_uses_metric_and_threshold():
         "M_dom_pri": M_pri,
         "M_pair_pri": empty_pairs,
         "pri_ibgc_ids": np.arange(6),
-        "pri_coords": np.array([[0, 0]] * 3 + [[5, 5]] * 3, dtype=np.float64),
         "pri_leaf_paths": ["0.0"] * 3 + ["1.0"] * 3,
         "pri_validated_rows": [3],
         "M_dom_q": M_q,
@@ -454,12 +453,10 @@ def test_cross_similarity_equals_stacked_composite_block(metric, chunk_rows):
 def test_partial_projection_does_not_depend_on_chunk_rows():
     M_dom, M_pair, w_dom, w_pair = _fixture(seed=5, n=80)
     n_pri = 50
-    rng = np.random.default_rng(5)
     common = {
         "M_dom_pri": M_dom[:n_pri],
         "M_pair_pri": M_pair[:n_pri],
         "pri_ibgc_ids": np.arange(n_pri),
-        "pri_coords": rng.random((n_pri, 2)),
         "pri_leaf_paths": [f"{i % 4}.{i % 7}" for i in range(n_pri)],
         "pri_validated_rows": [1, 9, 20],
         "M_dom_q": M_dom[n_pri:],
@@ -534,21 +531,3 @@ def test_idf_exponent_one_keeps_the_pre_amendment_sha():
     # Dice ignores it entirely.
     assert _compute_run_sha(**_SHA_BASE, idf_exponent=0.5) == _compute_run_sha(**_SHA_BASE)
 
-
-def test_layout_random_init_is_finite_and_normalised():
-    pytest.importorskip("umap")
-    import igraph as ig
-
-    from common_core.clustering.knn import build_knn_graph
-    from common_core.clustering.layout import compute_2d_layout
-
-    M_dom, M_pair, w_dom, w_pair = _fixture(n=80)
-    sim = compute_composite_similarity(
-        M_dom, M_pair, prune_below=0.0, metric=COSINE, domain_weights=w_dom, pair_weights=w_pair
-    )
-    graph = build_knn_graph(sim, k=5)
-    assert isinstance(graph, ig.Graph)
-    coords = compute_2d_layout(graph, sim, seed=1, init="random")
-    assert coords.shape == (80, 2) and np.isfinite(coords).all()
-    assert np.abs(coords).max() <= 10.0 + 1e-9
-    np.testing.assert_array_equal(coords, compute_2d_layout(graph, sim, seed=1, init="random"))
