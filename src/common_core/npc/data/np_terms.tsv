@@ -770,3 +770,9 @@ NPC:class:zizaane_sesquiterpenoids	class	Zizaane sesquiterpenoids	false	1	683
 NPC:class:m_terphenyls	class	m-Terphenyls	false	1	684
 NPC:class:p_terphenyls	class	p-Terphenyls	false	1	685
 NPC:class:pteridine_alkaloids	class	pteridine alkaloids	false	1	686
+NPC:superclass:other_alkaloids	superclass	Other Alkaloids	true	1	-1
+NPC:superclass:other_amino_acids_and_peptides	superclass	Other Amino acids and Peptides	true	1	-1
+NPC:superclass:other_fatty_acids	superclass	Other Fatty acids	true	1	-1
+NPC:superclass:other_polyketides	superclass	Other Polyketides	true	1	-1
+NPC:superclass:other_shikimates_and_phenylpropanoids	superclass	Other Shikimates and Phenylpropanoids	true	1	-1
+NPC:superclass:other_terpenoids	superclass	Other Terpenoids	true	1	-1

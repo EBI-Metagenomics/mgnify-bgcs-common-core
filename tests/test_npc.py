@@ -22,9 +22,10 @@ def ont():
 def test_ontology_shape(ont):
     assert LEVELS == ("pathway", "superclass", "class")
     assert len(ont.at_level("pathway")) == 7
-    assert len(ont.at_level("superclass")) == 77
+    # 77 NPClassifier superclasses + the 6 "Other <pathway>" buckets SanntiS 1.0 emits
+    assert len(ont.at_level("superclass")) == 83
     assert len(ont.at_level("class")) == 687
-    assert len(ont) == 771
+    assert len(ont) == 777
     # every non-root term but one orphan superclass has parents exactly one level up
     assert [t.name for t in ont.orphans()] == ["Pseudoalkaloids (transamidation)"]
     for t in ont.terms.values():
@@ -38,6 +39,9 @@ def test_find_is_case_insensitive(ont):
     t = ont.find("pathway", "amino acids AND peptides")
     assert t is not None and t.term_id == "NPC:pathway:amino_acids_and_peptides"
     assert ont.find("superclass", "Oligopeptides") is not None
+    # SanntiS 1.0 writes the bucket superclasses in lower case ("other Terpenoids")
+    other = ont.find("superclass", "other Terpenoids")
+    assert other is not None and ont.parents[other.term_id] == ("NPC:pathway:terpenoids",)
     assert ont.find("pathway", "Oligopeptides") is None
     assert ont.find("class", "no such class") is None
 

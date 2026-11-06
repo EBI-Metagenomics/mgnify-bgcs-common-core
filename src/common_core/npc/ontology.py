@@ -11,7 +11,10 @@ from pathlib import Path
 
 #: Identifier of the frozen NPClassifier index the term tables were built from
 #: (the same string SanntiS 1.0 records in its training-run provenance).
-ONTOLOGY_VERSION = "npclassifier_index_v1_250fd53c"
+ONTOLOGY_VERSION = "npclassifier_index_v1_250fd53c+sanntis_other_v1"
+#: The "+sanntis_other_v1" suffix: six superclass terms ``Other <pathway>`` were added to
+#: the SanntiS index because the SanntiS 1.0 superclass head emits them (rare superclasses
+#: bucketed per pathway at training time); they are not NPClassifier terms.
 
 #: Levels from the root down. Every edge goes from level ``i+1`` to level ``i``.
 LEVELS: tuple[str, ...] = ("pathway", "superclass", "class")

@@ -785,3 +785,9 @@ NPC:class:xenicane_diterpenoids	NPC:superclass:diterpenoids	class	superclass
 NPC:class:yohimbine_like_alkaloids	NPC:superclass:tryptophan_alkaloids	class	superclass
 NPC:class:zearalenones	NPC:superclass:macrolides	class	superclass
 NPC:class:zizaane_sesquiterpenoids	NPC:superclass:sesquiterpenoids	class	superclass
+NPC:superclass:other_alkaloids	NPC:pathway:alkaloids	superclass	pathway
+NPC:superclass:other_amino_acids_and_peptides	NPC:pathway:amino_acids_and_peptides	superclass	pathway
+NPC:superclass:other_fatty_acids	NPC:pathway:fatty_acids	superclass	pathway
+NPC:superclass:other_polyketides	NPC:pathway:polyketides	superclass	pathway
+NPC:superclass:other_shikimates_and_phenylpropanoids	NPC:pathway:shikimates_and_phenylpropanoids	superclass	pathway
+NPC:superclass:other_terpenoids	NPC:pathway:terpenoids	superclass	pathway
