@@ -49,3 +49,6 @@ where = ["src"]
 
 [tool.setuptools.dynamic]
 version = {file = "version.txt"}
+
+[tool.setuptools.package-data]
+common_core = ["npc/data/*.tsv"]

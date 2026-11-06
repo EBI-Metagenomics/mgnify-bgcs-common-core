@@ -61,6 +61,10 @@ BASE_NAME_TO_CLASS: dict[str, str] = {
     "alkaloid": "Alkaloid",
     "other": "Other",
     "unknown": "Other",
+    # SanntiS 1.0 ``bgc_class`` spellings (RF head over the six MIBiG classes).
+    "nrps": "NRP",
+    "pks": "Polyketide",
+    "ribosomal": "RiPP",
 }
 
 # antiSMASH product type (lowercased, '-' -> '_') -> category.
