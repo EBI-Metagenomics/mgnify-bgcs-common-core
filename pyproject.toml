@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,18 @@ name = "mgnify-bgcs-common-core"
 description = "Shared core utilities for MGnify BGCs"
 dynamic = ["version"]
 requires-python = ">=3.12"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Santiago Sanchez Fragoso", email = "fragoso@ebi.ac.uk" },
+    { name = "MGnify team", email = "metagenomics-help@ebi.ac.uk" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 dependencies = [
   "biopython>=1.83",
   "pydantic>=2",
