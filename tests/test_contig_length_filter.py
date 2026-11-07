@@ -184,3 +184,33 @@ def test_run_end_to_end_with_prokka_inputs(tmp_path: Path) -> None:
         if not line.startswith("#")
     ]
     assert [line.split("\t")[0] for line in gff_lines] == [LONG, LONG]
+
+
+def test_hierarchical_eukaryote_gff_maps_faa_by_parent(tmp_path: Path) -> None:
+    """BRAKER3/MetaEuk-style CDS rows (``ID=<tx>.CDS1;Parent=<tx>``) map the
+    transcript-keyed FAA records to their contig."""
+    gff = tmp_path / "euk.gff"
+    gff.write_text(
+        "##gff-version 3\n"
+        "ctg_1\tAUGUSTUS\tgene\t244\t1932\t.\t-\t.\tID=g1\n"
+        "ctg_1\tAUGUSTUS\tmRNA\t244\t1932\t.\t-\t.\tID=MGYG_00001.t1;Parent=g1\n"
+        "ctg_1\tAUGUSTUS\tCDS\t244\t900\t.\t-\t0\tID=MGYG_00001.t1.CDS1;Parent=MGYG_00001.t1\n"
+        "ctg_1\tAUGUSTUS\tCDS\t1000\t1932\t.\t-\t0\tID=MGYG_00001.t1.CDS2;Parent=MGYG_00001.t1\n"
+        "ctg_2\tAUGUSTUS\tCDS\t10\t300\t.\t+\t0\tID=MGYG_00002.t1.CDS1;Parent=MGYG_00002.t1\n"
+    )
+    mapping = _protein_contig_map_from_gff(gff)
+    assert mapping["MGYG_00001.t1"] == "ctg_1"
+    assert mapping["MGYG_00002.t1"] == "ctg_2"
+
+    faa = tmp_path / "euk.faa"
+    faa.write_text(">MGYG_00001.t1\nMKV\n>MGYG_00002.t1\nMKW\n")
+    out = tmp_path / "filtered.faa"
+    n = filter_faa(
+        faa,
+        out,
+        passing={"ctg_1"},
+        known_contigs={"ctg_1", "ctg_2"},
+        protein_to_contig=mapping,
+    )
+    assert n == 1
+    assert out.read_text().startswith(">MGYG_00001.t1")

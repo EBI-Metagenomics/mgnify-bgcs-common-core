@@ -121,7 +121,10 @@ def _contig_id_from_description(description: str) -> str | None:
 # CDS attributes that carry the identifier used as the FAA record ID.
 # ``Name`` is deliberately excluded: Prokka/Bakta use it for gene symbols
 # (e.g. ``rssB_1``), which are not unique protein identifiers.
-_GFF_PROTEIN_ID_KEYS = ("ID", "locus_tag", "protein_id")
+# ``Parent`` covers hierarchical eukaryote GFFs (BRAKER3 / MetaEuk / AUGUSTUS)
+# whose CDS rows are ``ID=<tx>.CDSn;Parent=<tx>`` while the FAA is keyed by the
+# transcript id ``<tx>``.
+_GFF_PROTEIN_ID_KEYS = ("ID", "locus_tag", "protein_id", "Parent")
 _GBK_PROTEIN_ID_KEYS = ("locus_tag", "protein_id")
 
 
@@ -238,7 +241,7 @@ def filter_faa(
             level,
             "FAA: %d of %d proteins could not be mapped to a contig and were "
             "dropped (e.g. %s). Provide a GFF/GBK whose CDS features carry these "
-            "IDs (ID / locus_tag / protein_id).",
+            "IDs (ID / locus_tag / protein_id / Parent).",
             len(unresolved),
             total,
             unresolved[:3],
@@ -312,12 +315,18 @@ def run(cfg: FilterSettings) -> None:
     if io.faa is not None:
         # Map protein IDs to contigs from the annotation the FAA came with;
         # needed when protein IDs do not embed the contig (Prokka locus tags).
+        # The GFF map is primary; a GBK map fills in IDs the GFF lacks (the
+        # GBK may carry protein_id / locus_tag rewritten by the GBK builder).
+        protein_to_contig: Optional[Dict[str, str]] = None
         if io.gff is not None:
             protein_to_contig = _protein_contig_map_from_gff(Path(io.gff))
-        elif has_gbk:
-            protein_to_contig = _protein_contig_map_from_gbk(Path(io.gbk))
-        else:
-            protein_to_contig = None
+        if has_gbk:
+            gbk_map = _protein_contig_map_from_gbk(Path(io.gbk))
+            if protein_to_contig is None:
+                protein_to_contig = gbk_map
+            else:
+                for pid, cid in gbk_map.items():
+                    protein_to_contig.setdefault(pid, cid)
         n = filter_faa(
             Path(io.faa),
             out_dir / "filtered.faa",
