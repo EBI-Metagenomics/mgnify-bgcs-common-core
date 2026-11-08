@@ -26,7 +26,13 @@ jobs:
       # tests skip.
       - name: Install
         run: pip install -e ".[dev,hpc-cpu]"
-      - name: ruff (syntax errors and undefined names; B12 widens this)
-        run: ruff check --select E9,F63,F7,F82 .
+      - name: ruff
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: pre-commit
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files --show-diff-on-failure
       - name: pytest
         run: pytest -q
