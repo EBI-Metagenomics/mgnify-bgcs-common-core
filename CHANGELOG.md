@@ -1,5 +1,42 @@
 # Changelog
 
+## [2.0.0](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.9.1...mgnify-bgcs-common-core-v2.0.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **common-core:** LoaderOptions(env_file) defaults to None instead of ".env".
+* **common-core:** common_core.metrics and the `ml` extra are gone. Anything installing mgnify-bgcs-common-core[ml] must drop the extra.
+* **common-core:** removed modules common_core.chemont, common_core.chemont_classifier, common_core.esmc_embedder, common_core.bgc_region_extractor, common_core.clustering.layout and common_core.clustering.gpu; removed extras esmc, chemont, hpc-gpu and scripts esmc-embed, esmc-embed-bgc, bgc-region-extractor, chemont-classify. read_outputs_tarball no longer returns "coords", partial assignments no longer carry umap_x / umap_y, ClusteringOutputs has no coords / cuda_version / gpu_model, and project_partials no longer takes pri_coords. SCHEMA_VERSION is 3, so older common-core releases reject new input tarballs.
+
+### Features
+
+* **common-core:** add IDF × enrichment weighted-cosine similarity and v2 clustering tarball ([8657305](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/86573053a0a88f7ea113221aeece34f4ba89a786))
+* **common-core:** compute domain enrichment weights from per-label counts ([3b9179b](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/3b9179bab975d7343366bbf58fff6a6bcc94df2d))
+* **common-core:** drop CHAMOIS, ESM-C, ChemOnt and the UMAP layout ([6513e72](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/6513e7247925cd63442fff7202c2c325297ffb1d))
+* **common-core:** load_settings no longer reads ./.env by default ([f8eceab](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/f8eceab1823a8740f9d2a082e13f4443027c7a06))
+* **common-core:** temper IDF with idf_exponent and use random UMAP init for cosine ([52f98d5](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/52f98d576ccf0d4aac4f5d579a3b4473a11467b7))
+* **common-core:** vendor the NPClassifier ontology and parse SanntiS 1.0 labels ([c5f12e6](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/c5f12e65ab408553a64c3fc523c69eaeaad9b419))
+
+
+### Bug Fixes
+
+* **common-core:** extract clustering tarballs with filter="data" ([6feeb47](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/6feeb4772581416f5d682754e516e465891e3151))
+* **common-core:** warn instead of silently ignoring an unreadable .env ([6afc214](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/6afc2144f7050f5df6da6999f99b84454b0adb4e))
+* **common-core:** zero the similarity diagonal without csr.setdiag ([1627dc6](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/1627dc65665e93b565a8da1bfad94850c5136442))
+* **contig-filter:** map transcript-keyed eukaryote FAA ids via CDS Parent ([c4fefd4](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/c4fefd4b5c039e1cd574df5540414c1d3d2f4158))
+* **npc:** add the six "Other &lt;pathway&gt;" superclasses SanntiS 1.0 emits ([cb1d719](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/cb1d719aa02a46fd97e4a2819d0cdc9c17601471))
+
+
+### Performance Improvements
+
+* **common-core:** project partials from the partials × primaries block only ([427d15a](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/427d15a0891a4b913cfe81571164c07dbc0e6599))
+
+
+### Code Refactoring
+
+* **common-core:** delete the metrics package and the ml extra ([47b55e7](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/commit/47b55e7d9ebf99550c6fe9ee54e9e347bf2ff2b8))
+
 ## [1.9.1](https://github.com/EBI-Metagenomics/mgnify-bgcs-common-core/compare/mgnify-bgcs-common-core-v1.9.0...mgnify-bgcs-common-core-v1.9.1) (2026-10-16)
 
 
