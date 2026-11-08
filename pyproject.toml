@@ -64,3 +64,8 @@ version = {file = "version.txt"}
 
 [tool.setuptools.package-data]
 common_core = ["npc/data/*.tsv"]
+
+[tool.deptry.package_module_name_map]
+biopython = "Bio"
+python-igraph = "igraph"
+scikit-learn = "sklearn"

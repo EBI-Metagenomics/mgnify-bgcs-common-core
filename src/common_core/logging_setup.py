@@ -18,10 +18,9 @@ from __future__ import annotations
 import json
 import logging
 from logging.config import dictConfig
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
-from typing_extensions import Literal
 
 
 class LoggingConfig(BaseModel):
@@ -82,7 +81,6 @@ def setup_logging(cfg: LoggingConfig) -> None:
             "root": {"level": cfg.level, "handlers": list(handlers.keys())},
             "loggers": {
                 "urllib3": {"level": cfg.third_party_level},
-                "botocore": {"level": cfg.third_party_level},
             },
         }
     )
