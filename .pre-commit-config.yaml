@@ -29,7 +29,7 @@ exclude: >
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
         exclude: ^(\.github/workflows/)
@@ -39,13 +39,10 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=50000]
 
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
-    hooks:
-      - id: black
-
+  # Keep rev equal to the ruff pin in pyproject's dev extra.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.4
+    rev: v0.17.2
     hooks:
       - id: ruff
-        args: ["--fix","--exit-zero"]
+        args: ["--fix"]
+      - id: ruff-format
