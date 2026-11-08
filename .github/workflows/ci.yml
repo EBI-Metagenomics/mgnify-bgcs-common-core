@@ -1,0 +1,32 @@
+name: CI
+
+# Runs on every PR and every push to dev/main.
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python lint + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # hpc-cpu brings scipy/pyarrow/igraph, without which the clustering
+      # tests skip.
+      - name: Install
+        run: pip install -e ".[dev,hpc-cpu]"
+      - name: ruff (syntax errors and undefined names; B12 widens this)
+        run: ruff check --select E9,F63,F7,F82 .
+      - name: pytest
+        run: pytest -q
