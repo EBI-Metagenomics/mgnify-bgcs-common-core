@@ -391,7 +391,9 @@ def _save_weights(scratch: Path, inputs: ClusteringInputs) -> list[str]:
     import numpy as np
 
     written: list[str] = []
-    for name, w in zip(_WEIGHT_FILES, (inputs.domain_weights, inputs.pair_weights)):
+    for name, w in zip(
+        _WEIGHT_FILES, (inputs.domain_weights, inputs.pair_weights), strict=False
+    ):
         if w is not None:
             np.save(scratch / name, np.asarray(w, dtype=np.float32))
             written.append(name)

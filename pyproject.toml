@@ -68,4 +68,13 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
 # ruff format owns line length; long strings and comments are left alone.
-ignore = ["E501"]
+# UP047 (PEP 695 generics) is cosmetic.
+ignore = ["E501", "UP047"]
+
+[tool.ruff.lint.per-file-ignores]
+# Imports after pytest.importorskip(); short loop names in assertions.
+"tests/*" = ["E402", "E741"]
+
+[tool.ruff.lint.flake8-bugbear]
+# A frozen dataclass: safe as a default argument.
+extend-immutable-calls = ["common_core.config_loader.LoaderOptions"]

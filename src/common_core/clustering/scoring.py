@@ -206,7 +206,7 @@ def pick_medoid(member_indices: list[int], sim: sp.csr_matrix) -> int:
         cols = sim_csr.indices[start:end]
         vals = sim_csr.data[start:end]
         s = 0.0
-        for c, v in zip(cols.tolist(), vals.tolist()):
+        for c, v in zip(cols.tolist(), vals.tolist(), strict=False):
             if c == idx or c not in members_set:
                 continue
             s += float(v)

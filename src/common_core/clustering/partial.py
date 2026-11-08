@@ -141,7 +141,7 @@ def project_partials(
             continue
 
         votes: Counter[str] = Counter()
-        for col, val in zip(top_cols.tolist(), top_vals.tolist()):
+        for col, val in zip(top_cols.tolist(), top_vals.tolist(), strict=False):
             p = pri_leaf_paths[col]
             if p:
                 votes[p] += float(val)
@@ -155,7 +155,7 @@ def project_partials(
             novelty = 0.0
         elif validated_set:
             max_sim_validated = 0.0
-            for col, val in zip(cols.tolist(), vals.tolist()):
+            for col, val in zip(cols.tolist(), vals.tolist(), strict=False):
                 if col in validated_set and val > max_sim_validated:
                     max_sim_validated = float(val)
             novelty = 1.0 - max_sim_validated

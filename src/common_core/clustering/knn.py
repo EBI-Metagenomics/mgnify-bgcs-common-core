@@ -66,7 +66,7 @@ def build_knn_graph(sim: sp.csr_matrix, k: int = 5) -> ig.Graph:
             top = np.argpartition(-neigh_val, k - 1)[:k]
             neigh_idx = neigh_idx[top]
             neigh_val = neigh_val[top]
-        for col, val in zip(neigh_idx.tolist(), neigh_val.tolist()):
+        for col, val in zip(neigh_idx.tolist(), neigh_val.tolist(), strict=False):
             a, b = (row, col) if row < col else (col, row)
             existing = edges.get((a, b))
             if existing is None or val > existing:
