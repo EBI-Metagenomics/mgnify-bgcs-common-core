@@ -40,7 +40,9 @@ class LoaderOptions:
 
     env_prefix: str = ""
     env_nested_delimiter: str = "__"
-    env_file: str | None = ".env"
+    # A dotenv file to read as well as the process environment. None (the
+    # default since 2.0.0) reads only the environment; pass e.g. ".env" to opt in.
+    env_file: str | None = None
     case_sensitive: bool = False
 
 
@@ -135,6 +137,7 @@ def load_settings(
     Priority (highest wins):
       - cli_overrides (explicit dict)
       - environment variables
+      - the ``options.env_file`` dotenv file, if one is given (none by default)
       - yaml file (if provided)
       - model defaults
 

@@ -71,3 +71,11 @@ def test_yaml_interpolates_env(tmp_path, monkeypatch):
         _Settings, yaml_path=yaml, options=LoaderOptions(env_prefix="T_", env_file=None)
     )
     assert cfg.a == "/data/x"
+
+
+def test_default_does_not_read_a_dotenv_in_the_working_directory(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("T_A=dotenv\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("T_A", raising=False)
+    cfg = load_settings(_Settings, options=LoaderOptions(env_prefix="T_"))
+    assert cfg.a == "default"
