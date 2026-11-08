@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import numpy as np
@@ -119,7 +119,8 @@ def project_partials(
 
     assignments: list[dict] = []
     skipped = 0
-    block_start, sim_block, block_end = 0, None, 0
+    block_start, block_end = 0, 0
+    sim_block: Any = None
     for q_row in range(n_partial):
         if q_row >= block_end:
             block_start, sim_block = next(blocks)
@@ -140,11 +141,11 @@ def project_partials(
             skipped += 1
             continue
 
-        votes: Counter[str] = Counter()
+        votes: Counter[str] = Counter()  # summed float similarities
         for col, val in zip(top_cols.tolist(), top_vals.tolist(), strict=False):
             p = pri_leaf_paths[col]
             if p:
-                votes[p] += float(val)
+                votes[p] += float(val)  # type: ignore[assignment]  # Counter typed as int
         if not votes:
             skipped += 1
             continue

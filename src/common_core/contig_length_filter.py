@@ -290,19 +290,18 @@ def run(cfg: FilterSettings) -> None:
     out_dir = Path(io.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    has_fna = io.fna is not None
-    has_gbk = io.gbk is not None
-
-    if not has_fna and not has_gbk:
+    fna, gbk = io.fna, io.gbk
+    if fna is None and gbk is None:
         raise SystemExit("At least one of --fna or --gbk must be provided.")
 
     # Determine contig lengths from whichever source is available.
     # Prefer FNA if both are given (FASTA parsing is faster).
-    if has_fna:
-        lengths = _contig_lengths_from_fna(Path(io.fna))
+    if fna is not None:
+        lengths = _contig_lengths_from_fna(Path(fna))
         source = "FNA"
     else:
-        lengths = _contig_lengths_from_gbk(Path(io.gbk))
+        assert gbk is not None
+        lengths = _contig_lengths_from_gbk(Path(gbk))
         source = "GBK"
     known = set(lengths)
     passing = {cid for cid, n in lengths.items() if n >= cfg.min_length}
@@ -318,12 +317,12 @@ def run(cfg: FilterSettings) -> None:
         log.warning("No contigs passed the length filter — all outputs will be empty.")
 
     # Filter each provided file type.
-    if has_fna:
-        n = filter_fna(Path(io.fna), out_dir / "filtered.fna", passing)
+    if fna is not None:
+        n = filter_fna(Path(fna), out_dir / "filtered.fna", passing)
         log.info("FNA: wrote %d records", n)
 
-    if has_gbk:
-        n = filter_gbk(Path(io.gbk), out_dir / "filtered.gbk", passing)
+    if gbk is not None:
+        n = filter_gbk(Path(gbk), out_dir / "filtered.gbk", passing)
         log.info("GBK: wrote %d records", n)
 
     if io.faa is not None:
@@ -334,8 +333,8 @@ def run(cfg: FilterSettings) -> None:
         protein_to_contig: dict[str, str] | None = None
         if io.gff is not None:
             protein_to_contig = _protein_contig_map_from_gff(Path(io.gff))
-        if has_gbk:
-            gbk_map = _protein_contig_map_from_gbk(Path(io.gbk))
+        if gbk is not None:
+            gbk_map = _protein_contig_map_from_gbk(Path(gbk))
             if protein_to_contig is None:
                 protein_to_contig = gbk_map
             else:

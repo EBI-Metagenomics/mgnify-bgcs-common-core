@@ -36,3 +36,5 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure
       - name: pytest
         run: pytest -q
+      - name: mypy (common_core)
+        run: mypy

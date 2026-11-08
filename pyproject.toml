@@ -38,6 +38,7 @@ hpc-cpu = [
 dev = [
   "pytest>=9.0.3,<10",
   "ruff==0.17.2",
+  "mypy==2.4.0",
 ]
 
 [project.scripts]
@@ -55,7 +56,7 @@ where = ["src"]
 version = {file = "version.txt"}
 
 [tool.setuptools.package-data]
-common_core = ["npc/data/*.tsv"]
+common_core = ["npc/data/*.tsv", "py.typed"]
 
 [tool.deptry.package_module_name_map]
 biopython = "Bio"
@@ -78,3 +79,17 @@ ignore = ["E501", "UP047"]
 [tool.ruff.lint.flake8-bugbear]
 # A frozen dataclass: safe as a default argument.
 extend-immutable-calls = ["common_core.config_loader.LoaderOptions"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/common_core"]
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "network: needs internet access (deselected by default; run with -m network)",
+  "slow: takes more than a few seconds",
+]
+addopts = "-m 'not network'"

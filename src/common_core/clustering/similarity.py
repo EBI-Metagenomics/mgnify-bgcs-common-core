@@ -302,6 +302,7 @@ def iter_cross_similarity(
         for w, fam in families:
             part = w * fam.block(start, end)
             block = part if block is None else block + part
+        assert block is not None  # weights sum > 0, so families is non-empty
         block = block.tocsr()
         block.eliminate_zeros()
         block.sort_indices()

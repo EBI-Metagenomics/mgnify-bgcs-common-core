@@ -34,6 +34,7 @@ import sys
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
+from typing import Any
 
 from common_core.clustering.io import read_inputs_tarball, write_outputs_tarball
 from common_core.clustering.knn import build_knn_graph
@@ -102,7 +103,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     metric = inputs.params.similarity_metric
     prune_below = float(inputs.params.prune_below)
     min_projection_similarity = float(inputs.params.min_projection_similarity)
-    feature_weights = {
+    feature_weights: dict[str, Any] = {
         "metric": metric,
         "domain_weights": inputs.domain_weights,
         "pair_weights": inputs.pair_weights,
@@ -202,7 +203,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         prune_below=prune_below,
         min_projection_similarity=min_projection_similarity,
         weights_sha=(
-            weights_sha256(inputs.domain_weights, inputs.pair_weights)
+            # check_metric guarantees both weight vectors are set together.
+            weights_sha256(inputs.domain_weights, inputs.pair_weights)  # type: ignore[arg-type]
             if inputs.domain_weights is not None
             else ""
         ),
@@ -264,8 +266,8 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
     )
     inputs = read_inputs_tarball(Path(args.input))
 
-    with tempfile.TemporaryDirectory() as scratch:
-        scratch = Path(scratch)
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        scratch = Path(scratch_dir)
         with tarfile.open(args.partials, "r:gz") as tf:
             tf.extractall(scratch)
         meta = json.loads((scratch / "primary_meta.json").read_text())
@@ -303,8 +305,8 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     keys = list(PARTIAL_ASSIGNMENT_COLUMNS)
     cols = {k: [row.get(k) for row in assignments] for k in keys}
-    with tempfile.TemporaryDirectory() as scratch:
-        scratch = Path(scratch)
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        scratch = Path(scratch_dir)
         pq.write_table(pa.table(cols), scratch / "partial_assignments.parquet")
         with tarfile.open(out_path, "w:gz") as tf:
             tf.add(

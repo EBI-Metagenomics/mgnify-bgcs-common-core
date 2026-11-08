@@ -203,6 +203,7 @@ def load_settings(
             file_secret_settings,
         )
 
-    dynamic.settings_customise_sources = classmethod(settings_customise_sources)
+    # Attached to the class built with type() above, which mypy cannot see.
+    dynamic.settings_customise_sources = classmethod(settings_customise_sources)  # type: ignore[attr-defined]
 
     return dynamic()  # type: ignore[return-value]

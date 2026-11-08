@@ -108,6 +108,7 @@ def compute_novelty_against_validated(
                 fam = np.where(denom > 0.0, 2.0 * inter / denom, 0.0).astype(np.float32)
         else:
             # Weighted cosine: unit-norm weighted rows, dot product is the score.
+            assert w_feat is not None  # check_metric requires weights here
             X = weighted_rows(M, w_feat)
             fam = np.minimum(
                 np.asarray((X @ X[val].T).todense(), dtype=np.float32),
@@ -115,6 +116,7 @@ def compute_novelty_against_validated(
             )
         block = w * fam if block is None else block + w * fam
 
+    assert block is not None  # weights sum > 0, so one family contributed
     max_sim = block.max(axis=1)
     novelty = (1.0 - max_sim).astype(np.float32)
     novelty[val] = 0.0

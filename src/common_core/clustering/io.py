@@ -95,8 +95,8 @@ def write_inputs_tarball(out_path: Path, inputs: ClusteringInputs) -> Path:
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as scratch:
-        scratch = Path(scratch)
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        scratch = Path(scratch_dir)
         sp.save_npz(scratch / "M_domains.npz", inputs.M_domains)
         sp.save_npz(scratch / "M_pairs.npz", inputs.M_pairs)
         np.save(
@@ -144,8 +144,8 @@ def read_inputs_tarball(path: Path) -> ClusteringInputs:
     import scipy.sparse as sp
 
     path = Path(path)
-    with tempfile.TemporaryDirectory() as scratch:
-        scratch = Path(scratch)
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        scratch = Path(scratch_dir)
         with tarfile.open(path, "r:gz") as tf:
             tf.extractall(scratch, filter="data")
 
@@ -210,8 +210,8 @@ def write_outputs_tarball(
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory() as scratch:
-        scratch = Path(scratch)
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        scratch = Path(scratch_dir)
 
         # clustering_run.json — everything the importer needs about the run
         run_json = {
@@ -316,8 +316,8 @@ def read_outputs_tarball(path: Path) -> dict:
     import pyarrow.parquet as pq
 
     path = Path(path)
-    with tempfile.TemporaryDirectory() as scratch:
-        scratch = Path(scratch)
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        scratch = Path(scratch_dir)
         with tarfile.open(path, "r:gz") as tf:
             tf.extractall(
                 scratch,
