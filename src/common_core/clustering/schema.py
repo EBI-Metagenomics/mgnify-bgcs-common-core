@@ -53,6 +53,10 @@ PARTIAL_ASSIGNMENT_COLUMNS: tuple[str, ...] = (
     "domain_novelty",
 )
 # Output-tarball members written by schema <= 2 and ignored on read.
+# The v1/v2 read paths are kept through 2.x (owner decision 2026-11-08): the
+# portal still imports pre-removal outputs (test_pre_removal_artifacts) and the
+# archived run tarballs on LTS are v2. Drop them in a later major release once
+# no v1/v2 tarball needs importing.
 LEGACY_OUTPUT_MEMBERS: tuple[str, ...] = ("coords.parquet",)
 LEGACY_PARTIAL_COLUMNS: tuple[str, ...] = ("umap_x", "umap_y")
 
