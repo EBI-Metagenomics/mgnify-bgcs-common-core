@@ -13,15 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""HPC-side BGC clustering: composite similarity, KNN, hierarchical Leiden, UMAP.
+"""HPC-side BGC clustering: similarity (composite Dice or weighted cosine), KNN,
+hierarchical Leiden, and novelty.
 
-The portal exports per-iBGC signature matrices and asks an HPC job to produce
-the hierarchy, coordinates, and novelty scores. The ``bgc-cluster`` CLI is
-the entry point; everything in this package is pure compute, no Django.
-
-Parallelism is opt-in and bounded — most stages are single-threaded because
-the libraries they call don't benefit from worker pools. See the plan in
-``/Users/fragoso/.claude/plans/`` (or the README) for the rationale.
+The portal exports per-iBGC signature matrices (``export_clustering_inputs``)
+and an HPC job (``bgc-cluster run``) returns the hierarchy, partial-iBGC
+projections and novelty scores; the tarball contract is in ``io.py``. Everything
+in this package is pure compute, no Django. Parallelism is opt-in and bounded:
+most stages are single-threaded because the libraries they call don't benefit
+from worker pools.
 """
 
 from common_core.clustering.schema import (
