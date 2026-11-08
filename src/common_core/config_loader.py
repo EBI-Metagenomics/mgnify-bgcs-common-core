@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Mapping
@@ -26,6 +27,9 @@ import yaml
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 T = TypeVar("T", bound=BaseSettings)
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -73,8 +77,12 @@ def _build_env_map(env_file: str | None, case_sensitive: bool) -> dict[str, str]
                         key = key.strip()
                         value = value.strip().strip("'\"")
                         env[key] = value
-            except Exception:
-                pass
+            except (OSError, UnicodeDecodeError):
+                logger.warning(
+                    "could not read %s; using the process environment only",
+                    env_path,
+                    exc_info=True,
+                )
 
     if case_sensitive:
         return env
