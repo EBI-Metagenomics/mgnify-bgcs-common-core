@@ -23,7 +23,6 @@ ruff check .
 Optional extras:
 
 - `hpc-cpu`: the clustering stack used by `bgc-cluster`. It pulls in the GPL-licensed `igraph` and `leidenalg`.
-- `ml`: model-side helpers.
 
 ## Contents
 
