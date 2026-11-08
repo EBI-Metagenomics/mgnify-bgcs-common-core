@@ -140,7 +140,7 @@ def read_inputs_tarball(path: Path) -> ClusteringInputs:
     with tempfile.TemporaryDirectory() as scratch:
         scratch = Path(scratch)
         with tarfile.open(path, "r:gz") as tf:
-            tf.extractall(scratch)
+            tf.extractall(scratch, filter="data")
 
         params = _params_from_jsonable(json.loads((scratch / "params.json").read_text()))
         domain_weights, pair_weights = _load_weights(scratch)
@@ -308,6 +308,7 @@ def read_outputs_tarball(path: Path) -> dict:
             tf.extractall(
                 scratch,
                 members=[m for m in tf.getmembers() if m.name not in LEGACY_OUTPUT_MEMBERS],
+                filter="data",
             )
         run = json.loads((scratch / "clustering_run.json").read_text())
         domain_weights, pair_weights = _load_weights(scratch)

@@ -432,3 +432,22 @@ def test_project_partials_ignores_legacy_coords(tmp_path):
     got = _raw_parquet(out, "partial_assignments.parquet")
     assert tuple(got) == PARTIAL_ASSIGNMENT_COLUMNS
     assert len(got["ibgc_id"]) == src.partials_ibgc_ids.size
+
+
+def _tarball_with_escaping_member(path: Path) -> Path:
+    import io
+
+    with tarfile.open(path, "w:gz") as tf:
+        data = b"escaped"
+        info = tarfile.TarInfo("../escaped.txt")
+        info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+    return path
+
+
+@pytest.mark.parametrize("reader", [read_inputs_tarball, read_outputs_tarball])
+def test_tarball_member_outside_destination_is_rejected(tmp_path, reader):
+    # filter="data" refuses members that would land outside the scratch dir.
+    tarball = _tarball_with_escaping_member(tmp_path / "evil.tar.gz")
+    with pytest.raises(tarfile.FilterError):
+        reader(tarball)
