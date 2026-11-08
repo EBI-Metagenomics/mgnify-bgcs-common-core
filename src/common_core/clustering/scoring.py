@@ -51,7 +51,7 @@ def compute_novelty_against_validated(
     similarity exactly as in
     :func:`common_core.clustering.similarity.compute_composite_similarity`.
 
-    Unlike :func:`compute_novelty_array`, this does **not** reuse the
+    This does **not** reuse the
     clustering similarity matrix. That matrix has its diagonal zeroed and is
     pruned (``prune_below``) so KNN / Leiden see clean edges — both of which
     corrupt novelty:
@@ -119,28 +119,6 @@ def compute_novelty_against_validated(
     novelty = (1.0 - max_sim).astype(np.float32)
     novelty[val] = 0.0
     return novelty
-
-
-def compute_novelty_array(
-    sim: sp.csr_matrix,
-    validated_cols: list[int],
-) -> np.ndarray:
-    """Per-row ``1 − max(sim_to_validated)``; NaN when there are no validated iBGCs.
-
-    .. deprecated::
-        Reuses the clustering similarity matrix (diagonal zeroed + pruned),
-        which mis-scores validated rows and near-threshold non-validated rows.
-        Use :func:`compute_novelty_against_validated`. Retained only for
-        backward-compatible callers / tests.
-    """
-    import numpy as np
-
-    n_rows = sim.shape[0]
-    if not validated_cols:
-        return np.full(n_rows, np.nan, dtype=np.float32)
-    sim_to_validated = sim[:, validated_cols]
-    max_sim = np.asarray(sim_to_validated.max(axis=1).todense()).reshape(-1)
-    return (1.0 - max_sim).astype(np.float32)
 
 
 def compute_domain_novelty_array(
