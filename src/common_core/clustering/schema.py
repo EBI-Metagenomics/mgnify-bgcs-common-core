@@ -82,27 +82,27 @@ class RunParams:
 class ClusteringInputs:
     """The contents of the input tarball after unpacking."""
 
-    M_domains: "sp.csr_matrix"
-    M_pairs: "sp.csr_matrix"
-    domain_accs: "np.ndarray"
-    pair_vocab: "np.ndarray"
-    ibgc_ids: "np.ndarray"
+    M_domains: sp.csr_matrix
+    M_pairs: sp.csr_matrix
+    domain_accs: np.ndarray
+    pair_vocab: np.ndarray
+    ibgc_ids: np.ndarray
 
     # Partials share the column vocab with the primaries (same domain_accs /
     # pair_vocab). Row count may be zero if there are no partials.
-    partials_M_domains: "sp.csr_matrix"
-    partials_M_pairs: "sp.csr_matrix"
-    partials_ibgc_ids: "np.ndarray"
+    partials_M_domains: sp.csr_matrix
+    partials_M_pairs: sp.csr_matrix
+    partials_ibgc_ids: np.ndarray
 
     # Subset of ibgc_ids whose source DashboardBgcs include is_validated=True.
-    validated_ibgc_ids: "np.ndarray"
+    validated_ibgc_ids: np.ndarray
 
     params: RunParams
 
     # v2: per-feature weights for ``similarity_metric="cosine_idf_enrich"``,
     # aligned to domain_accs / pair_vocab. None for Dice runs.
-    domain_weights: "np.ndarray | None" = None
-    pair_weights: "np.ndarray | None" = None
+    domain_weights: np.ndarray | None = None
+    pair_weights: np.ndarray | None = None
 
 
 @dataclass
@@ -114,8 +114,8 @@ class ClusteringOutputs:
     # Per-level integer labels: levels[d][v] is the label for vertex v at depth d.
     levels: list[list[int]]
     # Per-row novelty_score / domain_novelty; NaN means "leave NULL in DB".
-    novelty_score: "np.ndarray"
-    domain_novelty: "np.ndarray"
+    novelty_score: np.ndarray
+    domain_novelty: np.ndarray
 
     # GCF tree nodes (roots, internals, leaves) — one record per node.
     gcf_nodes: list[dict]

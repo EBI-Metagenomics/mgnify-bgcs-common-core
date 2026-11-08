@@ -36,15 +36,15 @@ log = logging.getLogger(__name__)
 
 
 def compute_novelty_against_validated(
-    M_domains: "sp.csr_matrix",
-    M_pairs: "sp.csr_matrix",
+    M_domains: sp.csr_matrix,
+    M_pairs: sp.csr_matrix,
     validated_cols: list[int],
     *,
     weights: tuple[float, float] = (0.5, 0.5),
     metric: str = "dice",
-    domain_weights: "np.ndarray | None" = None,
-    pair_weights: "np.ndarray | None" = None,
-) -> "np.ndarray":
+    domain_weights: np.ndarray | None = None,
+    pair_weights: np.ndarray | None = None,
+) -> np.ndarray:
     """Per-row ``1 − max(composite_sim_to_validated)``.
 
     ``metric`` / ``domain_weights`` / ``pair_weights`` select the per-family
@@ -91,8 +91,11 @@ def compute_novelty_against_validated(
 
     val = np.asarray(sorted(validated_cols), dtype=np.int64)
 
-    block: "np.ndarray | None" = None
-    for M, w, w_feat in ((M_domains, w_d, domain_weights), (M_pairs, w_a, pair_weights)):
+    block: np.ndarray | None = None
+    for M, w, w_feat in (
+        (M_domains, w_d, domain_weights),
+        (M_pairs, w_a, pair_weights),
+    ):
         if w <= 0:
             continue
         if metric == METRIC_DICE:
@@ -107,7 +110,8 @@ def compute_novelty_against_validated(
             # Weighted cosine: unit-norm weighted rows, dot product is the score.
             X = weighted_rows(M, w_feat)
             fam = np.minimum(
-                np.asarray((X @ X[val].T).todense(), dtype=np.float32), 1.0,
+                np.asarray((X @ X[val].T).todense(), dtype=np.float32),
+                1.0,
             )
         block = w * fam if block is None else block + w * fam
 
@@ -118,9 +122,9 @@ def compute_novelty_against_validated(
 
 
 def compute_novelty_array(
-    sim: "sp.csr_matrix",
+    sim: sp.csr_matrix,
     validated_cols: list[int],
-) -> "np.ndarray":
+) -> np.ndarray:
     """Per-row ``1 − max(sim_to_validated)``; NaN when there are no validated iBGCs.
 
     .. deprecated::
@@ -140,9 +144,9 @@ def compute_novelty_array(
 
 
 def compute_domain_novelty_array(
-    M_domains: "sp.csr_matrix",
+    M_domains: sp.csr_matrix,
     leaf_paths: list[str],
-) -> "np.ndarray":
+) -> np.ndarray:
     """Per-row fraction of domains unique within the row's leaf GCF.
 
     NaN for singleton leaf GCFs, empty leaf paths, and rows with zero
@@ -181,7 +185,7 @@ def compute_domain_novelty_array(
 # ── Medoid pick ─────────────────────────────────────────────────────────────
 
 
-def pick_medoid(member_indices: list[int], sim: "sp.csr_matrix") -> int:
+def pick_medoid(member_indices: list[int], sim: sp.csr_matrix) -> int:
     """Member with the highest summed similarity to other members.
 
     Ties broken deterministically (smallest member index wins).
@@ -240,7 +244,9 @@ def build_ltree_paths(
     if n == 0 or n_levels == 0:
         return {}, []
 
-    ibgc_ids_arr = ibgc_ids if isinstance(ibgc_ids, np.ndarray) else np.asarray(list(ibgc_ids))
+    ibgc_ids_arr = (
+        ibgc_ids if isinstance(ibgc_ids, np.ndarray) else np.asarray(list(ibgc_ids))
+    )
 
     label_to_vertices: dict[tuple[int, int], list[int]] = defaultdict(list)
     for d in range(n_levels):
@@ -298,14 +304,16 @@ def build_ltree_paths(
         paths_per_row[int(ibgc_ids_arr[v])] = label_path[(leaf_level, leaf_lbl)]
 
     log.info(
-        "build_ltree_paths: %d nodes across %d levels", len(nodes), n_levels,
+        "build_ltree_paths: %d nodes across %d levels",
+        len(nodes),
+        n_levels,
     )
     return paths_per_row, nodes
 
 
 def annotate_gcf_nodes(
     nodes: list[dict],
-    sim: "sp.csr_matrix",
+    sim: sp.csr_matrix,
     ibgc_ids,
 ) -> list[dict]:
     """Add representative_ibgc_id, member_count, descendant_count to every node.
@@ -314,7 +322,9 @@ def annotate_gcf_nodes(
     """
     import numpy as np
 
-    ibgc_ids_arr = ibgc_ids if isinstance(ibgc_ids, np.ndarray) else np.asarray(list(ibgc_ids))
+    ibgc_ids_arr = (
+        ibgc_ids if isinstance(ibgc_ids, np.ndarray) else np.asarray(list(ibgc_ids))
+    )
 
     parent_children_count: dict[str, int] = defaultdict(int)
     for node in nodes:

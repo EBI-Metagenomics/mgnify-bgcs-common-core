@@ -51,7 +51,7 @@ METRIC_COSINE_IDF_ENRICH = "cosine_idf_enrich"
 SIMILARITY_METRICS: tuple[str, ...] = (METRIC_DICE, METRIC_COSINE_IDF_ENRICH)
 
 
-def dice_similarity(M: "sp.csr_matrix", *, matmul_workers: int = 1) -> "sp.csr_matrix":
+def dice_similarity(M: sp.csr_matrix, *, matmul_workers: int = 1) -> sp.csr_matrix:
     """Sørensen–Dice on a binary feature matrix. CPU."""
     import numpy as np
     import scipy.sparse as sp
@@ -75,13 +75,15 @@ def dice_similarity(M: "sp.csr_matrix", *, matmul_workers: int = 1) -> "sp.csr_m
     values[safe] = 2.0 * inter.data[safe] / denom[safe]
 
     sim = sp.csr_matrix(
-        (values, (inter.row, inter.col)), shape=inter.shape, dtype=np.float32,
+        (values, (inter.row, inter.col)),
+        shape=inter.shape,
+        dtype=np.float32,
     )
     sim.eliminate_zeros()
     return sim
 
 
-def weighted_rows(M: "sp.csr_matrix", w: "np.ndarray") -> "sp.csr_matrix":
+def weighted_rows(M: sp.csr_matrix, w: np.ndarray) -> sp.csr_matrix:
     """``rownorm(M · diag(w))`` as float32 CSR; all-zero rows stay zero."""
     import numpy as np
     import scipy.sparse as sp
@@ -99,8 +101,11 @@ def weighted_rows(M: "sp.csr_matrix", w: "np.ndarray") -> "sp.csr_matrix":
 
 
 def weighted_cosine_similarity(
-    M: "sp.csr_matrix", w: "np.ndarray", *, matmul_workers: int = 1,
-) -> "sp.csr_matrix":
+    M: sp.csr_matrix,
+    w: np.ndarray,
+    *,
+    matmul_workers: int = 1,
+) -> sp.csr_matrix:
     """Weighted cosine ``Σ_{A∩B} w² / sqrt(Σ_A w² · Σ_B w²)``. CPU.
 
     Values are clipped to 1.0 so float32 round-off on self-matches can't
@@ -125,17 +130,22 @@ def weighted_cosine_similarity(
 
 def check_metric(
     metric: str,
-    M_domains: "sp.csr_matrix",
-    M_pairs: "sp.csr_matrix",
+    M_domains: sp.csr_matrix,
+    M_pairs: sp.csr_matrix,
     domain_weights,
     pair_weights,
 ) -> None:
     """Raise ``ValueError`` on an unknown metric or missing / misaligned weights."""
     if metric not in SIMILARITY_METRICS:
-        raise ValueError(f"unknown similarity metric {metric!r}; expected one of {SIMILARITY_METRICS}")
+        raise ValueError(
+            f"unknown similarity metric {metric!r}; expected one of {SIMILARITY_METRICS}"
+        )
     if metric == METRIC_DICE:
         return
-    for name, M, w in (("domain", M_domains, domain_weights), ("pair", M_pairs, pair_weights)):
+    for name, M, w in (
+        ("domain", M_domains, domain_weights),
+        ("pair", M_pairs, pair_weights),
+    ):
         if w is None:
             raise ValueError(f"metric {metric!r} needs {name}_weights")
         if len(w) != M.shape[1]:
@@ -145,8 +155,12 @@ def check_metric(
 
 
 def family_similarity(
-    M: "sp.csr_matrix", w, *, metric: str, matmul_workers: int = 1,
-) -> "sp.csr_matrix":
+    M: sp.csr_matrix,
+    w,
+    *,
+    metric: str,
+    matmul_workers: int = 1,
+) -> sp.csr_matrix:
     """One feature family (domains or pairs) under ``metric``."""
     if metric == METRIC_DICE:
         return dice_similarity(M, matmul_workers=matmul_workers)
@@ -154,16 +168,16 @@ def family_similarity(
 
 
 def compute_composite_similarity(
-    M_domains: "sp.csr_matrix",
-    M_pairs: "sp.csr_matrix",
+    M_domains: sp.csr_matrix,
+    M_pairs: sp.csr_matrix,
     *,
     weights: tuple[float, float] = (0.5, 0.5),
     prune_below: float = 0.05,
     matmul_workers: int = 1,
     metric: str = METRIC_DICE,
-    domain_weights: "np.ndarray | None" = None,
-    pair_weights: "np.ndarray | None" = None,
-) -> "sp.csr_matrix":
+    domain_weights: np.ndarray | None = None,
+    pair_weights: np.ndarray | None = None,
+) -> sp.csr_matrix:
     """Weighted mean of the per-family similarities over both signature matrices.
 
     ``metric="dice"`` (default) has identical numerics to the portal's
@@ -185,12 +199,16 @@ def compute_composite_similarity(
     w_d, w_a = w_d / total, w_a / total
 
     sim_d = (
-        family_similarity(M_domains, domain_weights, metric=metric, matmul_workers=matmul_workers)
+        family_similarity(
+            M_domains, domain_weights, metric=metric, matmul_workers=matmul_workers
+        )
         if w_d > 0
         else None
     )
     sim_a = (
-        family_similarity(M_pairs, pair_weights, metric=metric, matmul_workers=matmul_workers)
+        family_similarity(
+            M_pairs, pair_weights, metric=metric, matmul_workers=matmul_workers
+        )
         if w_a > 0
         else None
     )
@@ -220,23 +238,27 @@ def compute_composite_similarity(
     sim = sim.maximum(sim.T).tocsr()
     log.info(
         "compute_composite_similarity: metric=%s shape=%s nnz=%d w=(%.3f,%.3f)",
-        metric, sim.shape, sim.nnz, w_d, w_a,
+        metric,
+        sim.shape,
+        sim.nnz,
+        w_d,
+        w_a,
     )
     return sim
 
 
 def iter_cross_similarity(
-    Q_domains: "sp.csr_matrix",
-    Q_pairs: "sp.csr_matrix",
-    P_domains: "sp.csr_matrix",
-    P_pairs: "sp.csr_matrix",
+    Q_domains: sp.csr_matrix,
+    Q_pairs: sp.csr_matrix,
+    P_domains: sp.csr_matrix,
+    P_pairs: sp.csr_matrix,
     *,
     weights: tuple[float, float] = (0.5, 0.5),
     metric: str = METRIC_DICE,
-    domain_weights: "np.ndarray | None" = None,
-    pair_weights: "np.ndarray | None" = None,
+    domain_weights: np.ndarray | None = None,
+    pair_weights: np.ndarray | None = None,
     chunk_rows: int = 2048,
-) -> "Iterator[tuple[int, sp.csr_matrix]]":
+) -> Iterator[tuple[int, sp.csr_matrix]]:
     """Yield ``(start, block)`` row chunks of the query × reference composite.
 
     ``block`` is ``composite(Q[start:start+len], P)`` as float32 CSR with
@@ -267,7 +289,9 @@ def iter_cross_similarity(
 
     families = []
     if w_d > 0:
-        families.append((w_d, _CrossFamily(Q_domains, P_domains, domain_weights, metric)))
+        families.append(
+            (w_d, _CrossFamily(Q_domains, P_domains, domain_weights, metric))
+        )
     if w_a > 0:
         families.append((w_a, _CrossFamily(Q_pairs, P_pairs, pair_weights, metric)))
 
@@ -305,7 +329,7 @@ class _CrossFamily:
             P_f = weighted_rows(P, w)
         self.PT = P_f.T.tocsr()
 
-    def block(self, start: int, end: int) -> "sp.csr_matrix":
+    def block(self, start: int, end: int) -> sp.csr_matrix:
         import numpy as np
         import scipy.sparse as sp
 
@@ -324,13 +348,15 @@ class _CrossFamily:
         values = np.zeros_like(inter.data, dtype=np.float32)
         values[safe] = 2.0 * inter.data[safe] / denom[safe]
         sim = sp.csr_matrix(
-            (values, (inter.row, inter.col)), shape=inter.shape, dtype=np.float32,
+            (values, (inter.row, inter.col)),
+            shape=inter.shape,
+            dtype=np.float32,
         )
         sim.eliminate_zeros()
         return sim
 
 
-def _zero_diagonal(sim: "sp.csr_matrix") -> None:
+def _zero_diagonal(sim: sp.csr_matrix) -> None:
     """Zero stored diagonal entries in place.
 
     ``csr_matrix.setdiag(0)`` is a no-op on scipy 1.14 (the portal's pin) when
@@ -339,11 +365,13 @@ def _zero_diagonal(sim: "sp.csr_matrix") -> None:
     """
     import numpy as np
 
-    rows = np.repeat(np.arange(sim.shape[0], dtype=sim.indices.dtype), np.diff(sim.indptr))
+    rows = np.repeat(
+        np.arange(sim.shape[0], dtype=sim.indices.dtype), np.diff(sim.indptr)
+    )
     sim.data[sim.indices == rows] = 0
 
 
-def _matmul_chunked(Mf: "sp.csr_matrix", workers: int) -> "sp.csr_matrix":
+def _matmul_chunked(Mf: sp.csr_matrix, workers: int) -> sp.csr_matrix:
     """Row-chunked sparse matmul. Only useful at N ≥ ~100k.
 
     Each worker computes ``M[start:end] @ M.T`` and we vstack the partial

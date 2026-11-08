@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 
 
 def run_hierarchical_leiden(
-    graph: "ig.Graph",
+    graph: ig.Graph,
     resolutions: tuple[float, ...] = (0.03, 0.08, 0.15, 0.25),
     *,
     seed: int = 42,
@@ -93,6 +93,8 @@ def run_hierarchical_leiden(
     _partition(list(range(n)), depth=0)
     log.info(
         "run_hierarchical_leiden: %d vertices, %d levels (counts=%s)",
-        n, n_levels, next_label_at,
+        n,
+        n_levels,
+        next_label_at,
     )
     return levels

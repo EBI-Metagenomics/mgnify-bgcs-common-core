@@ -290,7 +290,9 @@ def test_combine_idf_exponent():
     # p = 1 is the benchmark reference, bit for bit.
     np.testing.assert_array_equal(W.combine(idf, enr, idf_exponent=1.0), idf * enr)
     np.testing.assert_allclose(
-        W.combine(idf, enr, idf_exponent=W.COSINE_IDF_EXPONENT), np.sqrt(idf) * enr, rtol=1e-6
+        W.combine(idf, enr, idf_exponent=W.COSINE_IDF_EXPONENT),
+        np.sqrt(idf) * enr,
+        rtol=1e-6,
     )
     assert W.combine(idf, enr, idf_exponent=0.5).dtype == np.float32
     for bad in (0.0, -1.0):
@@ -455,10 +457,16 @@ def test_cross_similarity_equals_stacked_composite_block(metric, chunk_rows):
     stacked = compute_composite_similarity(M_dom, M_pair, prune_below=0.0, **kw)
     expected = stacked[n_pri:, :n_pri].toarray()
 
-    blocks = list(iter_cross_similarity(
-        M_dom[n_pri:], M_pair[n_pri:], M_dom[:n_pri], M_pair[:n_pri],
-        chunk_rows=chunk_rows, **kw,
-    ))
+    blocks = list(
+        iter_cross_similarity(
+            M_dom[n_pri:],
+            M_pair[n_pri:],
+            M_dom[:n_pri],
+            M_pair[:n_pri],
+            chunk_rows=chunk_rows,
+            **kw,
+        )
+    )
     assert [s for s, _ in blocks] == list(range(0, M_dom.shape[0] - n_pri, chunk_rows))
     got = scipy_sparse.vstack([b for _, b in blocks]).toarray()
     assert got.dtype == np.float32
@@ -540,9 +548,14 @@ def test_cosine_run_sha_keys_metric_vocab_enrichment_and_weights():
 
 def test_idf_exponent_one_keeps_the_pre_amendment_sha():
     cos = dict(
-        _SHA_BASE, metric=COSINE, domain_vocab="IPR_GAPFILLED", enrichment_version="v1", weights_sha="abc"
+        _SHA_BASE,
+        metric=COSINE,
+        domain_vocab="IPR_GAPFILLED",
+        enrichment_version="v1",
+        weights_sha="abc",
     )
     assert _compute_run_sha(**cos, idf_exponent=1.0) == _compute_run_sha(**cos)
     # Dice ignores it entirely.
-    assert _compute_run_sha(**_SHA_BASE, idf_exponent=0.5) == _compute_run_sha(**_SHA_BASE)
-
+    assert _compute_run_sha(**_SHA_BASE, idf_exponent=0.5) == _compute_run_sha(
+        **_SHA_BASE
+    )

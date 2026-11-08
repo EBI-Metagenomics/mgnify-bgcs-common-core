@@ -14,6 +14,7 @@
 # limitations under the License.
 
 """Unit tests for common_core.gbk_id_utils.unwrap_id_qualifiers_inplace."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,7 +25,6 @@ from Bio.SeqFeature import FeatureLocation, SeqFeature
 from Bio.SeqRecord import SeqRecord
 
 from common_core.gbk_id_utils import unwrap_id_qualifiers_inplace
-
 
 LONG_ID = "ERZ12818450.521-NODE-521-length-3301-cov-2.911275_5"
 

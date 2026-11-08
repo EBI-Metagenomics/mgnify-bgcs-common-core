@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Type, TypeVar
+from typing import Any, TypeVar
 
 import yaml
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
@@ -35,11 +36,11 @@ class LoaderOptions:
 
     env_prefix: str = ""
     env_nested_delimiter: str = "__"
-    env_file: Optional[str] = ".env"
+    env_file: str | None = ".env"
     case_sensitive: bool = False
 
 
-def _read_yaml(path: Path) -> Dict[str, Any]:
+def _read_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
     with path.open("r", encoding="utf-8") as f:
@@ -52,8 +53,8 @@ def _read_yaml(path: Path) -> Dict[str, Any]:
 _ENV_PATTERN = re.compile(r"\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)\}")
 
 
-def _build_env_map(env_file: Optional[str], case_sensitive: bool) -> Dict[str, str]:
-    env: Dict[str, str] = dict(os.environ)
+def _build_env_map(env_file: str | None, case_sensitive: bool) -> dict[str, str]:
+    env: dict[str, str] = dict(os.environ)
 
     if env_file:
         env_path = Path(env_file)
@@ -114,10 +115,10 @@ def _expand_env_in_data(
 
 
 def load_settings(
-    model: Type[T],
+    model: type[T],
     *,
-    yaml_path: Optional[str | Path] = None,
-    cli_overrides: Optional[Mapping[str, Any]] = None,
+    yaml_path: str | Path | None = None,
+    cli_overrides: Mapping[str, Any] | None = None,
     options: LoaderOptions = LoaderOptions(),
 ) -> T:
     """
@@ -131,7 +132,7 @@ def load_settings(
 
     yaml can contain non-secret config; env provides secrets; cli can override both.
     """
-    yaml_data: Dict[str, Any] = {}
+    yaml_data: dict[str, Any] = {}
     if yaml_path is not None:
         yaml_data = _read_yaml(Path(yaml_path))
 
@@ -166,14 +167,14 @@ def load_settings(
         def get_field_value(self, field, field_name: str) -> tuple[Any, str, bool]:
             return None, field_name, False  # unused
 
-        def __call__(self) -> Dict[str, Any]:
+        def __call__(self) -> dict[str, Any]:
             return dict(yaml_data)
 
     class _CliSource(PydanticBaseSettingsSource):
         def get_field_value(self, field, field_name: str) -> tuple[Any, str, bool]:
             return None, field_name, False  # unused
 
-        def __call__(self) -> Dict[str, Any]:
+        def __call__(self) -> dict[str, Any]:
             return dict(cli_data)
 
     # Wire sources in desired order:

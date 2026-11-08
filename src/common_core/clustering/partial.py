@@ -44,21 +44,21 @@ log = logging.getLogger(__name__)
 
 def project_partials(
     *,
-    M_dom_pri: "sp.csr_matrix",
-    M_pair_pri: "sp.csr_matrix",
+    M_dom_pri: sp.csr_matrix,
+    M_pair_pri: sp.csr_matrix,
     pri_ibgc_ids,
     pri_leaf_paths: list[str],
     pri_validated_rows: list[int],
-    M_dom_q: "sp.csr_matrix",
-    M_pair_q: "sp.csr_matrix",
+    M_dom_q: sp.csr_matrix,
+    M_pair_q: sp.csr_matrix,
     partial_ibgc_ids,
     validated_ibgc_ids=None,
     weights: tuple[float, float] = (0.5, 0.5),
     knn_k: int = 5,
     min_total_similarity: float = 0.1,
     metric: str = "dice",
-    domain_weights: "np.ndarray | None" = None,
-    pair_weights: "np.ndarray | None" = None,
+    domain_weights: np.ndarray | None = None,
+    pair_weights: np.ndarray | None = None,
     chunk_rows: int = 2048,
 ) -> tuple[list[dict], int]:
     """Return ``(assignments, n_skipped)``.
@@ -105,9 +105,14 @@ def project_partials(
     # the primaries × primaries and partials × partials blocks too, unpruned:
     # ~30e9 entries and 2–11 h at portal scale.
     blocks = iter_cross_similarity(
-        M_dom_q.tocsr(), M_pair_q.tocsr(), M_dom_pri.tocsr(), M_pair_pri.tocsr(),
-        weights=weights, metric=metric,
-        domain_weights=domain_weights, pair_weights=pair_weights,
+        M_dom_q.tocsr(),
+        M_pair_q.tocsr(),
+        M_dom_pri.tocsr(),
+        M_pair_pri.tocsr(),
+        weights=weights,
+        metric=metric,
+        domain_weights=domain_weights,
+        pair_weights=pair_weights,
         chunk_rows=chunk_rows,
     )
     M_dom_q_csr = M_dom_q.tocsr()
@@ -181,6 +186,8 @@ def project_partials(
 
     log.info(
         "project_partials: assigned=%d skipped=%d (of %d partials)",
-        len(assignments), skipped, n_partial,
+        len(assignments),
+        skipped,
+        n_partial,
     )
     return assignments, skipped

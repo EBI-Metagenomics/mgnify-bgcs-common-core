@@ -33,8 +33,8 @@ without spaces already).
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 _INDENT = " " * 21
 _ID_QUAL_RE = re.compile(r'^ {21}/(locus_tag|protein_id|gene)="')
@@ -50,7 +50,7 @@ def unwrap_id_qualifiers_inplace(
     passed through unchanged.
     """
     qual_re = re.compile(
-        r'^ {21}/(' + "|".join(re.escape(q) for q in qualifiers) + r')="'
+        r"^ {21}/(" + "|".join(re.escape(q) for q in qualifiers) + r')="'
     )
     p = Path(gbk_path)
     text = p.read_text()
@@ -67,7 +67,7 @@ def unwrap_id_qualifiers_inplace(
                 cont = lines[j]
                 if not cont.startswith(_INDENT):
                     break
-                tail = cont[len(_INDENT):]
+                tail = cont[len(_INDENT) :]
                 if tail.lstrip().startswith("/"):
                     break
                 joined = joined.rstrip() + tail.strip()

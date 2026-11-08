@@ -56,7 +56,9 @@ def test_find_is_case_insensitive(ont):
     assert ont.find("superclass", "Oligopeptides") is not None
     # SanntiS 1.0 writes the bucket superclasses in lower case ("other Terpenoids")
     other = ont.find("superclass", "other Terpenoids")
-    assert other is not None and ont.parents[other.term_id] == ("NPC:pathway:terpenoids",)
+    assert other is not None and ont.parents[other.term_id] == (
+        "NPC:pathway:terpenoids",
+    )
     assert ont.find("pathway", "Oligopeptides") is None
     assert ont.find("class", "no such class") is None
 

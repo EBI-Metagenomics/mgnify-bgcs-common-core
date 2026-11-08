@@ -166,7 +166,9 @@ def pair_enrichment(
     return w
 
 
-def combine(idf: np.ndarray, enrich: np.ndarray, *, idf_exponent: float = 1.0) -> np.ndarray:
+def combine(
+    idf: np.ndarray, enrich: np.ndarray, *, idf_exponent: float = 1.0
+) -> np.ndarray:
     """Feature weight ``idf ** idf_exponent × enrich`` (float32, same length as both inputs).
 
     ``idf_exponent=1`` is the benchmark reference, bit for bit.

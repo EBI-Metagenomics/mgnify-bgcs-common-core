@@ -31,7 +31,8 @@ import hashlib
 import logging
 import math
 import sys
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from common_core.clustering.io import read_inputs_tarball, write_outputs_tarball
@@ -39,13 +40,13 @@ from common_core.clustering.knn import build_knn_graph
 from common_core.clustering.leiden import run_hierarchical_leiden
 from common_core.clustering.partial import project_partials
 from common_core.clustering.schema import PARTIAL_ASSIGNMENT_COLUMNS, ClusteringOutputs
-from common_core.clustering.weights import weights_sha256
 from common_core.clustering.scoring import (
     annotate_gcf_nodes,
     build_ltree_paths,
     compute_domain_novelty_array,
     compute_novelty_against_validated,
 )
+from common_core.clustering.weights import weights_sha256
 
 log = logging.getLogger("bgc-cluster")
 
@@ -82,14 +83,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
     inputs = read_inputs_tarball(Path(args.input))
     log.info(
         "loaded inputs: M_domains=%s M_pairs=%s ibgc_ids=%d partials=%d validated=%d",
-        inputs.M_domains.shape, inputs.M_pairs.shape,
-        len(inputs.ibgc_ids), len(inputs.partials_ibgc_ids),
+        inputs.M_domains.shape,
+        inputs.M_pairs.shape,
+        len(inputs.ibgc_ids),
+        len(inputs.partials_ibgc_ids),
         len(inputs.validated_ibgc_ids),
     )
 
     # Pipeline parameter resolution. CLI overrides params.json when supplied.
     weights = tuple(args.weight or inputs.params.score_weights or DEFAULT_WEIGHTS)
-    resolutions = tuple(args.resolutions or inputs.params.leiden_resolutions or DEFAULT_RESOLUTIONS)
+    resolutions = tuple(
+        args.resolutions or inputs.params.leiden_resolutions or DEFAULT_RESOLUTIONS
+    )
     seed = args.seed if args.seed is not None else inputs.params.seed
     knn_k = args.knn_k if args.knn_k is not None else inputs.params.knn_k
     # Similarity metric + thresholds come from params.json only (v1 → Dice,
@@ -105,9 +110,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
     log.info(
         "similarity: metric=%s schema=v%d vocab=%s enrichment=%s idf_exponent=%g prune_below=%.4f "
         "min_projection_similarity=%.4f",
-        metric, inputs.params.schema_version, inputs.params.domain_vocab or "-",
-        inputs.params.enrichment_version or "-", inputs.params.idf_exponent,
-        prune_below, min_projection_similarity,
+        metric,
+        inputs.params.schema_version,
+        inputs.params.domain_vocab or "-",
+        inputs.params.enrichment_version or "-",
+        inputs.params.idf_exponent,
+        prune_below,
+        min_projection_similarity,
     )
 
     n_primary = inputs.M_domains.shape[0]
@@ -115,13 +124,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         log.error("no primary iBGCs in input tarball — nothing to cluster")
         return 1
 
-    effective_k = int(knn_k) if knn_k is not None and knn_k != "auto" else _auto_knn_k(n_primary)
+    effective_k = (
+        int(knn_k) if knn_k is not None and knn_k != "auto" else _auto_knn_k(n_primary)
+    )
     log.info("kNN k=%d (n_primary=%d, supplied=%s)", effective_k, n_primary, knn_k)
 
     # 1. composite similarity (Dice or IDF × enrichment weighted cosine)
     sim = _compute_sim(
-        inputs.M_domains, inputs.M_pairs, weights=weights,
-        matmul_workers=args.matmul_workers, prune_below=prune_below,
+        inputs.M_domains,
+        inputs.M_pairs,
+        weights=weights,
+        matmul_workers=args.matmul_workers,
+        prune_below=prune_below,
         **feature_weights,
     )
 
@@ -142,7 +156,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
     # a validated iBGC's self-match then yields novelty 0 by construction.
     validated_cols = _validated_cols(inputs.ibgc_ids, inputs.validated_ibgc_ids)
     novelty = compute_novelty_against_validated(
-        inputs.M_domains, inputs.M_pairs, validated_cols, weights=weights,
+        inputs.M_domains,
+        inputs.M_pairs,
+        validated_cols,
+        weights=weights,
         **feature_weights,
     )
     domain_novelty = compute_domain_novelty_array(inputs.M_domains, leaf_paths)
@@ -165,7 +182,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
     log.info(
         "partials: projected=%d skipped=%d",
-        len(partial_assignments), n_skipped,
+        len(partial_assignments),
+        n_skipped,
     )
 
     # 7. sha256 — stable, parameter-keyed
@@ -232,13 +250,18 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
     This is a niche path; the standard ``run`` already projects partials.
     """
     import json
-    import numpy as np
-    import scipy.sparse as sp
     import tarfile
     import tempfile
 
-    log.info("bgc-cluster project-partials --input %s --partials %s --output %s",
-             args.input, args.partials, args.output)
+    import numpy as np
+    import scipy.sparse as sp
+
+    log.info(
+        "bgc-cluster project-partials --input %s --partials %s --output %s",
+        args.input,
+        args.partials,
+        args.output,
+    )
     inputs = read_inputs_tarball(Path(args.input))
 
     with tempfile.TemporaryDirectory() as scratch:
@@ -284,7 +307,10 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
         scratch = Path(scratch)
         pq.write_table(pa.table(cols), scratch / "partial_assignments.parquet")
         with tarfile.open(out_path, "w:gz") as tf:
-            tf.add(scratch / "partial_assignments.parquet", arcname="partial_assignments.parquet")
+            tf.add(
+                scratch / "partial_assignments.parquet",
+                arcname="partial_assignments.parquet",
+            )
     log.info("Wrote %d partial assignments to %s", len(assignments), out_path)
     return 0
 
@@ -293,15 +319,27 @@ def _cmd_project_partials(args: argparse.Namespace) -> int:
 
 
 def _compute_sim(
-    M_dom, M_pair, *, weights, matmul_workers: int, prune_below: float,
-    metric: str = "dice", domain_weights=None, pair_weights=None,
+    M_dom,
+    M_pair,
+    *,
+    weights,
+    matmul_workers: int,
+    prune_below: float,
+    metric: str = "dice",
+    domain_weights=None,
+    pair_weights=None,
 ):
     from common_core.clustering.similarity import compute_composite_similarity
 
     return compute_composite_similarity(
-        M_dom, M_pair, weights=weights, prune_below=prune_below,
+        M_dom,
+        M_pair,
+        weights=weights,
+        prune_below=prune_below,
         matmul_workers=matmul_workers,
-        metric=metric, domain_weights=domain_weights, pair_weights=pair_weights,
+        metric=metric,
+        domain_weights=domain_weights,
+        pair_weights=pair_weights,
     )
 
 
@@ -361,7 +399,10 @@ def _compute_run_sha(
     ]
     is_dice = metric == "dice"
     if not is_dice or (prune_below, min_projection_similarity) != V1_THRESHOLDS:
-        parts += [f"prune={prune_below:.6f}", f"min_proj={min_projection_similarity:.6f}"]
+        parts += [
+            f"prune={prune_below:.6f}",
+            f"min_proj={min_projection_similarity:.6f}",
+        ]
     if not is_dice:
         parts += [
             f"metric={metric}",
@@ -389,29 +430,43 @@ def _build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--input", required=True, help="path to input tarball")
     pr.add_argument("--output", required=True, help="path to write output tarball")
     pr.add_argument(
-        "--device", choices=["cpu"], default="cpu",
+        "--device",
+        choices=["cpu"],
+        default="cpu",
         help="Kept so existing job scripts still parse; CPU is the only device.",
     )
-    pr.add_argument("--knn-k", default=None, help="KNN k; default 'auto' = max(5, ceil(ln(n)))")
     pr.add_argument(
-        "--resolutions", nargs="+", type=float, default=None,
+        "--knn-k", default=None, help="KNN k; default 'auto' = max(5, ceil(ln(n)))"
+    )
+    pr.add_argument(
+        "--resolutions",
+        nargs="+",
+        type=float,
+        default=None,
         help="Leiden CPM resolutions, coarsest first (default 0.03 0.08 0.15 0.25)",
     )
     pr.add_argument(
-        "--weight", nargs=2, type=float, default=None,
+        "--weight",
+        nargs=2,
+        type=float,
+        default=None,
         metavar=("W_DOMAIN", "W_ADJACENCY"),
         help="Composite weights for the domain / adjacency terms (default 0.5 0.5)",
     )
     pr.add_argument("--seed", type=int, default=None, help="Reproducibility seed")
     pr.add_argument(
-        "--matmul-workers", type=int, default=1,
+        "--matmul-workers",
+        type=int,
+        default=1,
         help=(
             "Row-chunked sparse-matmul worker count. Default 1 (single-threaded). "
             "Only set >1 at N≥100k; loky overhead dominates below that."
         ),
     )
 
-    pp = sub.add_parser("project-partials", help="Project partials against a previous run")
+    pp = sub.add_parser(
+        "project-partials", help="Project partials against a previous run"
+    )
     pp.add_argument("--input", required=True)
     pp.add_argument("--partials", required=True)
     pp.add_argument("--output", required=True)

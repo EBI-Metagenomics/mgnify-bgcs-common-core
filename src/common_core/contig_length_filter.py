@@ -28,7 +28,6 @@ import gzip
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Optional, Set
 
 from Bio import SeqIO
 from pydantic import BaseModel, Field
@@ -47,7 +46,7 @@ def _open_seq(path: Path):
     """Open a file for BioPython SeqIO, transparently decompressing .gz."""
     if str(path).endswith(".gz"):
         return gzip.open(path, "rt")
-    return open(path, "r")
+    return open(path)
 
 
 # ---------------------------------------------------------------------------
@@ -56,10 +55,10 @@ def _open_seq(path: Path):
 
 
 class IOConfig(BaseModel):
-    fna: Optional[str] = None
-    faa: Optional[str] = None
-    gbk: Optional[str] = None
-    gff: Optional[str] = None
+    fna: str | None = None
+    faa: str | None = None
+    gbk: str | None = None
+    gff: str | None = None
     out_dir: str = "."
 
 
@@ -75,19 +74,19 @@ class FilterSettings(BaseSettings):
 # ---------------------------------------------------------------------------
 
 
-def _contig_lengths_from_fna(fna_path: Path) -> Dict[str, int]:
+def _contig_lengths_from_fna(fna_path: Path) -> dict[str, int]:
     """Return ``{contig_id: length}`` for every FASTA record."""
     with _open_seq(fna_path) as fh:
         return {record.id: len(record.seq) for record in SeqIO.parse(fh, "fasta")}
 
 
-def _contig_lengths_from_gbk(gbk_path: Path) -> Dict[str, int]:
+def _contig_lengths_from_gbk(gbk_path: Path) -> dict[str, int]:
     """Return ``{contig_id: length}`` for every GenBank record."""
     with _open_seq(gbk_path) as fh:
         return {record.id: len(record.seq) for record in SeqIO.parse(fh, "genbank")}
 
 
-def filter_fna(fna_path: Path, out_path: Path, passing: Set[str]) -> int:
+def filter_fna(fna_path: Path, out_path: Path, passing: set[str]) -> int:
     """Write only passing contigs. Return count of written records."""
     with _open_seq(fna_path) as fh:
         kept = [r for r in SeqIO.parse(fh, "fasta") if r.id in passing]
@@ -95,7 +94,7 @@ def filter_fna(fna_path: Path, out_path: Path, passing: Set[str]) -> int:
     return len(kept)
 
 
-def filter_gbk(gbk_path: Path, out_path: Path, passing: Set[str]) -> int:
+def filter_gbk(gbk_path: Path, out_path: Path, passing: set[str]) -> int:
     """Write only GenBank records whose id is in *passing*."""
     with _open_seq(gbk_path) as fh:
         kept = [r for r in SeqIO.parse(fh, "genbank") if r.id in passing]
@@ -143,13 +142,13 @@ _GFF_PROTEIN_ID_KEYS = ("ID", "locus_tag", "protein_id", "Parent")
 _GBK_PROTEIN_ID_KEYS = ("locus_tag", "protein_id")
 
 
-def _protein_contig_map_from_gff(gff_path: Path) -> Dict[str, str]:
+def _protein_contig_map_from_gff(gff_path: Path) -> dict[str, str]:
     """Map protein identifiers to their contig using the CDS features of a GFF.
 
     Covers annotators whose protein IDs do not embed the contig ID, e.g.
     Prokka locus tags (``MGYG000296006_00001`` on contig ``MGYG000296006_1``).
     """
-    mapping: Dict[str, str] = {}
+    mapping: dict[str, str] = {}
     with open_text(gff_path) as fh:
         for line in fh:
             if line.startswith("##FASTA"):
@@ -166,9 +165,9 @@ def _protein_contig_map_from_gff(gff_path: Path) -> Dict[str, str]:
     return mapping
 
 
-def _protein_contig_map_from_gbk(gbk_path: Path) -> Dict[str, str]:
+def _protein_contig_map_from_gbk(gbk_path: Path) -> dict[str, str]:
     """Map protein identifiers to their contig using the CDS features of a GBK."""
-    mapping: Dict[str, str] = {}
+    mapping: dict[str, str] = {}
     with _open_seq(gbk_path) as fh:
         for record in SeqIO.parse(fh, "genbank"):
             for feature in record.features:
@@ -183,9 +182,9 @@ def _protein_contig_map_from_gbk(gbk_path: Path) -> Dict[str, str]:
 def _resolve_contig_id(
     record_id: str,
     description: str,
-    known_contigs: Set[str],
-    protein_to_contig: Optional[Dict[str, str]],
-) -> Optional[str]:
+    known_contigs: set[str],
+    protein_to_contig: dict[str, str] | None,
+) -> str | None:
     """Return the contig a protein belongs to, or ``None`` if unresolvable.
 
     Resolution order: explicit annotation mapping (GFF/GBK CDS features),
@@ -208,9 +207,9 @@ def _resolve_contig_id(
 def filter_faa(
     faa_path: Path,
     out_path: Path,
-    passing: Set[str],
-    known_contigs: Optional[Set[str]] = None,
-    protein_to_contig: Optional[Dict[str, str]] = None,
+    passing: set[str],
+    known_contigs: set[str] | None = None,
+    protein_to_contig: dict[str, str] | None = None,
 ) -> int:
     """Keep proteins whose parent contig is in *passing*.
 
@@ -266,7 +265,7 @@ def filter_faa(
     return len(kept)
 
 
-def filter_gff(gff_path: Path, out_path: Path, passing: Set[str]) -> int:
+def filter_gff(gff_path: Path, out_path: Path, passing: set[str]) -> int:
     """Keep GFF feature lines whose seqid (col 1) is in *passing*."""
     kept = 0
     with open_text(gff_path) as fin, open(out_path, "w") as fout:
@@ -332,7 +331,7 @@ def run(cfg: FilterSettings) -> None:
         # needed when protein IDs do not embed the contig (Prokka locus tags).
         # The GFF map is primary; a GBK map fills in IDs the GFF lacks (the
         # GBK may carry protein_id / locus_tag rewritten by the GBK builder).
-        protein_to_contig: Optional[Dict[str, str]] = None
+        protein_to_contig: dict[str, str] | None = None
         if io.gff is not None:
             protein_to_contig = _protein_contig_map_from_gff(Path(io.gff))
         if has_gbk:

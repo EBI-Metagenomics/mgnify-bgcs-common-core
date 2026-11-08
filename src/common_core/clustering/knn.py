@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def build_knn_graph(sim: "sp.csr_matrix", k: int = 5) -> "ig.Graph":
+def build_knn_graph(sim: sp.csr_matrix, k: int = 5) -> ig.Graph:
     """Return an undirected ``igraph.Graph`` with edge weights = similarity.
 
     Vertex order matches the row/column order of ``sim``. Disconnected

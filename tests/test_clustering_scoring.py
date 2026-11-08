@@ -33,7 +33,7 @@ from common_core.clustering.scoring import (  # noqa: E402
 )
 
 
-def _coo(rows: list[list[int]], n_cols: int) -> "scipy_sparse.csr_matrix":
+def _coo(rows: list[list[int]], n_cols: int) -> scipy_sparse.csr_matrix:
     coords_r: list[int] = []
     coords_c: list[int] = []
     for r, cols in enumerate(rows):
@@ -42,11 +42,13 @@ def _coo(rows: list[list[int]], n_cols: int) -> "scipy_sparse.csr_matrix":
             coords_c.append(c)
     data = np.ones(len(coords_r), dtype=np.uint8)
     return scipy_sparse.csr_matrix(
-        (data, (coords_r, coords_c)), shape=(len(rows), n_cols), dtype=np.uint8,
+        (data, (coords_r, coords_c)),
+        shape=(len(rows), n_cols),
+        dtype=np.uint8,
     )
 
 
-def _zeros(n: int) -> "scipy_sparse.csr_matrix":
+def _zeros(n: int) -> scipy_sparse.csr_matrix:
     return scipy_sparse.csr_matrix((n, 1), dtype=np.uint8)
 
 

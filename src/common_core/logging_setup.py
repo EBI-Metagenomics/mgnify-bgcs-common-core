@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 from logging.config import dictConfig
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 class LoggingConfig(BaseModel):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     json_: bool = Field(False, alias="json")
-    file: Optional[str] = None
+    file: str | None = None
     third_party_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = (
         "WARNING"
     )
@@ -49,7 +49,7 @@ class JsonLineFormatter(logging.Formatter):
 
 
 def setup_logging(cfg: LoggingConfig) -> None:
-    handlers: Dict[str, Any] = {
+    handlers: dict[str, Any] = {
         "console": {
             "class": "logging.StreamHandler",
             "level": cfg.level,

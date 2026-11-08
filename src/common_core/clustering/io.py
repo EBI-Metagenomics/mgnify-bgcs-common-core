@@ -99,7 +99,9 @@ def write_inputs_tarball(out_path: Path, inputs: ClusteringInputs) -> Path:
         scratch = Path(scratch)
         sp.save_npz(scratch / "M_domains.npz", inputs.M_domains)
         sp.save_npz(scratch / "M_pairs.npz", inputs.M_pairs)
-        np.save(scratch / "domain_accs.npy", np.asarray(inputs.domain_accs, dtype=object))
+        np.save(
+            scratch / "domain_accs.npy", np.asarray(inputs.domain_accs, dtype=object)
+        )
         np.save(scratch / "pair_vocab.npy", np.asarray(inputs.pair_vocab, dtype=object))
         np.save(scratch / "ibgc_ids.npy", np.asarray(inputs.ibgc_ids, dtype=np.int64))
         sp.save_npz(scratch / "partials_M_domains.npz", inputs.partials_M_domains)
@@ -108,8 +110,13 @@ def write_inputs_tarball(out_path: Path, inputs: ClusteringInputs) -> Path:
             scratch / "partials_ibgc_ids.npy",
             np.asarray(inputs.partials_ibgc_ids, dtype=np.int64),
         )
-        np.save(scratch / "validated.npy", np.asarray(inputs.validated_ibgc_ids, dtype=np.int64))
-        (scratch / "params.json").write_text(json.dumps(_params_as_jsonable(inputs.params)))
+        np.save(
+            scratch / "validated.npy",
+            np.asarray(inputs.validated_ibgc_ids, dtype=np.int64),
+        )
+        (scratch / "params.json").write_text(
+            json.dumps(_params_as_jsonable(inputs.params))
+        )
         weight_files = _save_weights(scratch, inputs)
 
         with tarfile.open(out_path, "w:gz") as tf:
@@ -142,7 +149,9 @@ def read_inputs_tarball(path: Path) -> ClusteringInputs:
         with tarfile.open(path, "r:gz") as tf:
             tf.extractall(scratch, filter="data")
 
-        params = _params_from_jsonable(json.loads((scratch / "params.json").read_text()))
+        params = _params_from_jsonable(
+            json.loads((scratch / "params.json").read_text())
+        )
         domain_weights, pair_weights = _load_weights(scratch)
         inputs = ClusteringInputs(
             M_domains=sp.load_npz(scratch / "M_domains.npz"),
@@ -267,8 +276,13 @@ def write_outputs_tarball(
         # Weights + the vocabularies they're aligned to (v2, weighted metrics).
         weight_files = _save_weights(scratch, inputs)
         if weight_files:
-            np.save(scratch / "domain_accs.npy", np.asarray(inputs.domain_accs, dtype=object))
-            np.save(scratch / "pair_vocab.npy", np.asarray(inputs.pair_vocab, dtype=object))
+            np.save(
+                scratch / "domain_accs.npy",
+                np.asarray(inputs.domain_accs, dtype=object),
+            )
+            np.save(
+                scratch / "pair_vocab.npy", np.asarray(inputs.pair_vocab, dtype=object)
+            )
             weight_files += ["domain_accs.npy", "pair_vocab.npy"]
 
         members = [
@@ -307,7 +321,9 @@ def read_outputs_tarball(path: Path) -> dict:
         with tarfile.open(path, "r:gz") as tf:
             tf.extractall(
                 scratch,
-                members=[m for m in tf.getmembers() if m.name not in LEGACY_OUTPUT_MEMBERS],
+                members=[
+                    m for m in tf.getmembers() if m.name not in LEGACY_OUTPUT_MEMBERS
+                ],
                 filter="data",
             )
         run = json.loads((scratch / "clustering_run.json").read_text())
@@ -321,7 +337,9 @@ def read_outputs_tarball(path: Path) -> dict:
             "hierarchy": pq.read_table(scratch / "hierarchy.parquet").to_pydict(),
             "gcf_nodes": pq.read_table(scratch / "gcf_nodes.parquet").to_pydict(),
             "scores": pq.read_table(scratch / "scores.parquet").to_pydict(),
-            "partial_assignments": _read_partials(scratch / "partial_assignments.parquet"),
+            "partial_assignments": _read_partials(
+                scratch / "partial_assignments.parquet"
+            ),
             "domain_weights": domain_weights,
             "pair_weights": pair_weights,
             **vocab,

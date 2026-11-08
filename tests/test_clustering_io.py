@@ -193,7 +193,9 @@ def test_idf_exponent_round_trips_and_defaults_to_one(tmp_path):
     assert got.params.idf_exponent == 0.5
 
     # A v2 params.json written before the key existed reads as 1.0.
-    path = write_inputs_tarball(tmp_path / "old.tar.gz", _inputs(_v2_params(), with_weights=True))
+    path = write_inputs_tarball(
+        tmp_path / "old.tar.gz", _inputs(_v2_params(), with_weights=True)
+    )
     scratch = tmp_path / "old"
     with tarfile.open(path, "r:gz") as tf:
         tf.extractall(scratch)
@@ -373,8 +375,14 @@ def test_v2_output_fixture_carries_the_legacy_layout():
         assert "coords.parquet" in tf.getnames()
         run = json.loads(tf.extractfile("clustering_run.json").read())
     assert run["params"]["schema_version"] == 2
-    assert {"umap_x", "umap_y"} <= set(_raw_parquet(V2_OUTPUT_FIXTURE, "partial_assignments.parquet"))
-    assert set(_raw_parquet(V2_OUTPUT_FIXTURE, "coords.parquet")) == {"ibgc_id", "umap_x", "umap_y"}
+    assert {"umap_x", "umap_y"} <= set(
+        _raw_parquet(V2_OUTPUT_FIXTURE, "partial_assignments.parquet")
+    )
+    assert set(_raw_parquet(V2_OUTPUT_FIXTURE, "coords.parquet")) == {
+        "ibgc_id",
+        "umap_x",
+        "umap_y",
+    }
 
 
 def test_v2_output_tarball_reads_with_layout_ignored():
@@ -427,8 +435,20 @@ def test_project_partials_ignores_legacy_coords(tmp_path):
             tf.add(f, arcname=f.name)
 
     out = tmp_path / "assign.tar.gz"
-    assert main(["project-partials", "--input", str(inp), "--partials", str(partials_tgz),
-                 "--output", str(out)]) == 0
+    assert (
+        main(
+            [
+                "project-partials",
+                "--input",
+                str(inp),
+                "--partials",
+                str(partials_tgz),
+                "--output",
+                str(out),
+            ]
+        )
+        == 0
+    )
     got = _raw_parquet(out, "partial_assignments.parquet")
     assert tuple(got) == PARTIAL_ASSIGNMENT_COLUMNS
     assert len(got["ibgc_id"]) == src.partials_ibgc_ids.size
